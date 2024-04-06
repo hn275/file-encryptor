@@ -1,16 +1,29 @@
 package main
 
 import (
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
+	b64 "encoding/base64"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"strings"
+
+	"github.com/aead/serpent"
+	"golang.org/x/term"
 )
 
-var ErrHelpCommand = errors.New("")
+var (
+	ErrHelpCommand = errors.New("")
+
+	base64 = b64.StdEncoding
+)
 
 type Command interface {
-	handle() error
+	handle(cli *Cli) error
 }
 
 type Encryptor struct{}
@@ -20,6 +33,99 @@ type Cli struct {
 	command     Command
 	fileName    string
 	fileNameOut string
+}
+
+func main() {
+	cli, err := parseCli()
+	if err != nil {
+		if errors.Is(err, ErrHelpCommand) {
+			fmt.Printf("%s\n%s\n", asciiArt, usage)
+			os.Exit(0)
+		}
+		fmt.Printf("%s\nError - %s\n%s\n", asciiArt, err.Error(), usage)
+		os.Exit(0)
+	}
+	fmt.Println(asciiArt)
+	if err := cli.command.handle(cli); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func (enc *Encryptor) handle(cli *Cli) error {
+	// OPEN FILEBYTES
+	fmt.Println("Reading file", cli.fileName)
+	fileBytes, err := os.ReadFile(cli.fileName)
+	if err != nil {
+		return err
+	}
+
+	// READ KEY
+	fmt.Println("Enter password: ")
+	pass, err := term.ReadPassword(0)
+	if err != nil {
+		return err
+	}
+
+	if len(pass) < 8 {
+		return errors.New("Password at least 8 characters long.")
+	}
+
+	fmt.Print("\nGenerating key from input... ")
+	s := sha256.New()
+	if _, err := s.Write(pass); err != nil {
+		return nil
+	}
+	key := s.Sum(nil)
+
+	fmt.Print("OK\n")
+	// ENCRYPT DATA
+	fmt.Print("Encrypting data... ")
+	// create new cipher block
+	block, err := serpent.NewCipher(key)
+	if err != nil {
+		return err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return err
+	}
+
+	// nonce
+	nonceSize := gcm.NonceSize()
+	nonce := make([]byte, nonceSize)
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return err
+	}
+	// encrypt
+	size := nonceSize + len(fileBytes) + gcm.Overhead()
+	ciphertext := make([]byte, nonceSize, size)
+
+	copy(ciphertext[:nonceSize], nonce)
+	ciphertext = gcm.Seal(ciphertext, nonce, fileBytes, nil)
+
+	fmt.Print("OK\n")
+
+	// WRITE TO FILE
+	fmt.Printf("Writing to file [%s]... ", cli.fileNameOut)
+	// base64 ciphertext
+	buf := make([]byte, base64.EncodedLen(size))
+	base64.Encode(buf, ciphertext)
+
+	// create/truncate fileNameOut
+	fileOut, err := os.OpenFile(cli.fileNameOut, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	if err != nil {
+		return err
+	}
+	defer fileOut.Close()
+
+	// write to file
+	n, err := fileOut.Write(buf)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("OK, wrote %d bytes.\n", n)
+	return nil
 }
 
 const asciiArt string = `
@@ -39,26 +145,8 @@ Usage: file-encryptor <command> <input-file-name> [output-file-name]
        <input-file-name>              input file
        [output-file-name] (optional)  output file, default to "out"`
 
-func main() {
-	cli, err := parseCli()
-	if err != nil {
-		if errors.Is(err, ErrHelpCommand) {
-			fmt.Printf("%s\n%s\n", asciiArt, usage)
-			os.Exit(0)
-		}
-		fmt.Printf("%s\nError - %s\n%s\n", asciiArt, err.Error(), usage)
-		os.Exit(0)
-	}
-	fmt.Println(asciiArt)
-	fmt.Println(cli)
-}
-
-func (enc *Encryptor) handle() error {
-	return nil
-}
-
-func (dec *Decryptor) handle() error {
-	return nil
+func (dec *Decryptor) handle(cli *Cli) error {
+	panic("not implemented")
 }
 
 func parseCli() (*Cli, error) {
