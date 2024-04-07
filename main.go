@@ -5,186 +5,163 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	b64 "encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	"strings"
 
 	"github.com/aead/serpent"
 	"golang.org/x/term"
 )
 
 var (
-	ErrHelpCommand = errors.New("")
-
-	base64 = b64.StdEncoding
+	base64         = b64.StdEncoding
+	binName        = os.Args[0]
+	usage   string = fmt.Sprintf("Usage: %s <enc|dec> <input-file> [output-file]", binName)
 )
 
 type Command interface {
-	handle(cli *Cli) error
+	handle(f *File) ([]byte, error)
 }
 
-type Encryptor struct{}
-type Decryptor struct{}
+type Encryptor struct {
+	cipher.AEAD
+}
+type Decryptor struct {
+	cipher.AEAD
+}
 
-type Cli struct {
-	command     Command
+type File struct {
 	fileName    string
 	fileNameOut string
+	buf         []byte
 }
 
 func main() {
-	cli, err := parseCli()
-	if err != nil {
-		if errors.Is(err, ErrHelpCommand) {
-			fmt.Printf("%s\n%s\n", asciiArt, usage)
-			os.Exit(0)
-		}
-		fmt.Printf("%s\nError - %s\n%s\n", asciiArt, err.Error(), usage)
-		os.Exit(0)
+	// PARSE COMMAND LINE
+	if len(os.Args) != 3 && len(os.Args) != 4 {
+		fmt.Printf("Invalid argument(s).\n%s\n", usage)
+		os.Exit(1)
 	}
-	fmt.Println(asciiArt)
-	if err := cli.command.handle(cli); err != nil {
-		log.Fatal(err)
-	}
-}
 
-func (enc *Encryptor) handle(cli *Cli) error {
-	// OPEN FILEBYTES
-	fmt.Println("Reading file", cli.fileName)
-	fileBytes, err := os.ReadFile(cli.fileName)
+	action := os.Args[1]
+	if action != "enc" && action != "dec" {
+		fmt.Printf("Invalid action.\n%s\n", usage)
+		os.Exit(1)
+	}
+
+	var file File
+	file.fileName = os.Args[2]
+	if file.fileName[:2] == "./" {
+		file.fileName = file.fileName[2:]
+	}
+
+	if len(os.Args) == 4 {
+		file.fileNameOut = os.Args[3]
+	} else {
+		file.fileNameOut = "file.out"
+	}
+
+	// READ INPUT FILE
+	var err error
+	file.buf, err = os.ReadFile(file.fileName)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 
 	// READ KEY
-	fmt.Println("Enter password: ")
+	fmt.Println("Enter key: ")
 	pass, err := term.ReadPassword(0)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 
 	if len(pass) < 8 {
-		return errors.New("Password at least 8 characters long.")
+		log.Fatal("Password at least 8 characters long.")
 	}
 
-	fmt.Print("\nGenerating key from input... ")
 	s := sha256.New()
 	if _, err := s.Write(pass); err != nil {
-		return nil
+		log.Fatal(err)
 	}
-	key := s.Sum(nil)
 
-	fmt.Print("OK\n")
-	// ENCRYPT DATA
-	fmt.Print("Encrypting data... ")
-	// create new cipher block
-	block, err := serpent.NewCipher(key)
+	block, err := serpent.NewCipher(s.Sum(nil))
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 
-	gcm, err := cipher.NewGCM(block)
+	c, err := cipher.NewGCM(block)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 
-	// nonce
-	nonceSize := gcm.NonceSize()
-	nonce := make([]byte, nonceSize)
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return err
+	// ENCRYPT/DECRYPT
+	var cmd Command
+	if action == "dec" {
+		cmd = &Decryptor{c}
+	} else {
+		cmd = &Encryptor{c}
 	}
-	// encrypt
-	size := nonceSize + len(fileBytes) + gcm.Overhead()
-	ciphertext := make([]byte, nonceSize, size)
 
-	copy(ciphertext[:nonceSize], nonce)
-	ciphertext = gcm.Seal(ciphertext, nonce, fileBytes, nil)
-
-	fmt.Print("OK\n")
-
-	// WRITE TO FILE
-	fmt.Printf("Writing to file [%s]... ", cli.fileNameOut)
-	// base64 ciphertext
-	buf := make([]byte, base64.EncodedLen(size))
-	base64.Encode(buf, ciphertext)
-
-	// create/truncate fileNameOut
-	fileOut, err := os.OpenFile(cli.fileNameOut, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	buf, err := cmd.handle(&file)
 	if err != nil {
-		return err
+		log.Fatal(err)
+	}
+
+	// WRITE OUTPUT FILE
+	fileOut, err := os.OpenFile(file.fileNameOut, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Fatal(err)
 	}
 	defer fileOut.Close()
 
-	// write to file
 	n, err := fileOut.Write(buf)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
-	fmt.Printf("OK, wrote %d bytes.\n", n)
-	return nil
+
+	// OUTPUT STDIN
+	opts := "Encryption"
+	if action == "dec" {
+		opts = "Decryption"
+	}
+	fmt.Printf("%s ok.\nWrote %d bytes to %s.\n", opts, n, file.fileNameOut)
 }
 
-const asciiArt string = `
-  __ _ _                                             _             
- / _(_) | ___        ___ _ __   ___ _ __ _   _ _ __ | |_ ___  _ __ 
-| |_| | |/ _ \_____ / _ \ '_ \ / __| '__| | | | '_ \| __/ _ \| '__|
-|  _| | |  __/_____|  __/ | | | (__| |  | |_| | |_) | || (_) | |   
-|_| |_|_|\___|      \___|_| |_|\___|_|   \__, | .__/ \__\___/|_|   
-                                         |___/|_|`
+// Encrypts and base64 encodes the content of the file.
+func (aead *Encryptor) handle(f *File) ([]byte, error) {
+	// nonce
+	nonceSize := aead.NonceSize()
+	nonce := make([]byte, nonceSize)
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
 
-const usage string = `
-Usage: file-encryptor <command> <input-file-name> [output-file-name]
-       <command> 
-           enc                        encrypt a file
-           dec                        decrypt a file
-           --help | -h                print this help and exit
-       <input-file-name>              input file
-       [output-file-name] (optional)  output file, default to "out"`
+	// encrypt
+	size := nonceSize + len(f.buf) + aead.Overhead()
+	ciphertext := make([]byte, nonceSize, size)
 
-func (dec *Decryptor) handle(cli *Cli) error {
-	panic("not implemented")
+	copy(ciphertext[:nonceSize], nonce)
+	ciphertext = aead.Seal(ciphertext, nonce, f.buf, nil)
+
+	// base64 encodes
+	encoded := make([]byte, base64.EncodedLen(len(ciphertext)))
+	base64.Encode(encoded, ciphertext)
+	return encoded, nil
 }
 
-func parseCli() (*Cli, error) {
-	if len(os.Args) < 2 {
-		return nil, errors.New("Missing command")
+// Decode base 64 and decrypt content of the file.
+func (c *Decryptor) handle(f *File) ([]byte, error) {
+	var err error
+	// decode base64
+	buf := make([]byte, base64.DecodedLen(len(f.buf)))
+	if _, err = base64.Decode(buf, f.buf); err != nil {
+		return nil, err
 	}
 
-	cmd := strings.ToLower(os.Args[1])
-	if cmd == "--help" || cmd == "-h" {
-		return nil, ErrHelpCommand
-	}
-
-	if len(os.Args) < 3 {
-		return nil, errors.New("Missing file name")
-	}
-
-	fileNameOut := "out"
-	if len(os.Args) >= 4 {
-		fileNameOut = os.Args[3]
-	}
-
-	switch cmd {
-	case "enc":
-		return &Cli{
-			command:     &Encryptor{},
-			fileName:    os.Args[2],
-			fileNameOut: fileNameOut,
-		}, nil
-
-	case "dec":
-		return &Cli{
-			command:     &Decryptor{},
-			fileName:    os.Args[2],
-			fileNameOut: fileNameOut,
-		}, nil
-
-	default:
-		return nil, fmt.Errorf("Unrecognized command: %s", os.Args[1])
-
-	}
+	// decrypt
+	nonceSize := c.NonceSize()
+	nonce := buf[:nonceSize]
+	ciphertext := buf[nonceSize:]
+	return c.Open(nil, nonce, ciphertext, nil)
 }
