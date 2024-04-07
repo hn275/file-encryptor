@@ -17,7 +17,12 @@ import (
 var (
 	base64         = b64.StdEncoding
 	binName        = os.Args[0]
-	usage   string = fmt.Sprintf("Usage: %s <enc|dec> <input-file> [output-file]", binName)
+	usage   string = fmt.Sprintf(`Usage: %s <command> <input> [output]
+        command: enc|dec
+            enc - to encrypt a file
+            dec - to decrypt a file
+        input: input file name
+        (optional) output: output file name, default: file.out`, binName)
 )
 
 type Command interface {
