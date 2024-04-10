@@ -1,13 +1,10 @@
+use cbc::cipher::{block_padding, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use clap::{Parser, ValueEnum};
-use crypto::buffer::{BufferResult, ReadBuffer, WriteBuffer};
-use crypto::symmetriccipher::BlockDecryptor;
-use crypto::symmetriccipher::BlockEncryptor;
 use crypto::{self, digest::Digest, sha2};
-use serpent::{
-    cipher::{BlockEncrypt, KeyInit},
-    Serpent,
-};
 use std::{io, process::exit};
+
+type SerpentCbcEnc = cbc::Encryptor<serpent::Serpent>;
+type SerpentCbcDec = cbc::Decryptor<serpent::Serpent>;
 
 #[derive(Parser, Debug)]
 struct CLI {
@@ -39,12 +36,18 @@ fn main() {
         exit(1);
     }
 
-    let cipher = serpent::Serpent::new_from_slice(&key).unwrap();
-    let mut read_buf = crypto::buffer::RefReadBuffer::new("Hello world".as_bytes());
-    let mut buf: [u8; 64] = [0; 64];
-    let mut write_buf = crypto::buffer::RefReadBuffer::new(&mut buf);
-    cipher.encrypt_blocks(&mut read_buf);
-    dbg!(&key);
+    let nonce: [u8; 16] = [0; 16];
+    let cipher = SerpentCbcEnc::new_from_slices(&key, &nonce).unwrap();
+    let pt = "Hello world".as_bytes();
+    let dat = cipher.encrypt_padded_vec_mut::<block_padding::Pkcs7>(&pt);
+    dbg!(&dat, &dat.len(), pt.len());
+
+    let cipher = SerpentCbcDec::new_from_slices(&key, &nonce).unwrap();
+    let pt2 = cipher
+        .decrypt_padded_vec_mut::<block_padding::Pkcs7>(&dat)
+        .unwrap();
+
+    dbg!(String::from_utf8(pt2).unwrap());
 }
 
 fn make_key(buf: &mut [u8; 32]) -> io::Result<()> {
