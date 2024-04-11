@@ -43,9 +43,9 @@ fn open(cli: cli::CLI) {
     });
 
     // make cipher block
-    let mut key: crypto::Key = [0; 32];
+    let mut key: [u8; 32] = [0; 32];
     crypto::Encoding::sha256(&mut key, password.as_bytes());
-    let block = crypto::Encryptor::new(key);
+    let block = crypto::Encryptor::new(&key);
     let plaintext = block.decrypt(&ciphertext).unwrap_or_else(|err| {
         eprintln!("Failed to decrypt data:\n{}", err);
         exit(1);
@@ -88,14 +88,13 @@ fn seal(cli: cli::CLI) {
     }
 
     // make cipher block
-    let mut key: crypto::Key = [0; 32];
+    let mut key: [u8; 32] = [0; 32];
     crypto::Encoding::sha256(&mut key, password.as_bytes());
-    let block = crypto::Encryptor::new(key);
+    let block = crypto::Encryptor::new(&key);
 
     // encrypt data
-    let pt_len = plaintext.len();
-    let size = pt_len + block.pad_len(pt_len) + crypto::IV_SIZE;
-    let mut ciphertext: Vec<u8> = crypto::make_buffer(size);
+    let s: usize = plaintext.len() + crypto::NONCE_LEN + crypto::AUTH_TAG_LEN;
+    let mut ciphertext: Vec<u8> = crypto::make_buffer(s);
     block
         .encrypt(plaintext.as_slice(), &mut ciphertext)
         .unwrap_or_else(|err| {

@@ -1,18 +1,15 @@
-use cbc::{
-    cipher::{block_padding, BlockDecryptMut, BlockEncryptMut, KeyIvInit},
-    Decryptor as CBCDecryptor, Encryptor as CBCEncryptor,
-};
 use crypto::{self, digest::Digest, sha2};
-use rand::{rngs::OsRng, RngCore};
+use rand::RngCore;
 use std::error::Error;
 
-type SerpentCbcEnc = CBCEncryptor<serpent::Serpent>;
-type SerpentCbcDec = CBCDecryptor<serpent::Serpent>;
+use aes_gcm::{
+    aead::{AeadCore, AeadInPlace, AeadMutInPlace, Key, KeyInit, OsRng},
+    aes::cipher,
+    Aes256Gcm, Nonce,
+};
 
-pub type Key = [u8; 32];
-
-pub const BLOCK_SIZE: usize = 16;
-pub const IV_SIZE: usize = 16;
+pub const NONCE_LEN: usize = 12;
+pub const AUTH_TAG_LEN: usize = 16;
 
 pub mod encoding {
     use base64::{
@@ -34,52 +31,44 @@ pub mod encoding {
 }
 pub struct Encoding;
 impl Encoding {
-    pub fn sha256(buf: &mut [u8; 32], data: &[u8]) {
+    pub fn sha256(buf: &mut [u8], data: &[u8]) {
         let mut sha256 = sha2::Sha256::new();
         sha256.input(data);
         sha256.result(buf);
     }
 }
 
-pub struct Encryptor(Key);
+pub struct Encryptor<'a>(&'a Key<Aes256Gcm>);
 
-impl<'a> Encryptor {
-    pub fn new(key: Key) -> Encryptor {
+impl<'a> Encryptor<'a> {
+    pub fn new(key: &[u8]) -> Encryptor {
+        let key: &Key<Aes256Gcm> = Key::<Aes256Gcm>::from_slice(&key);
         return Encryptor(key);
-    }
-    /// returns the overhead (padding length) of plaintext with `pt_len`
-    pub fn pad_len(&self, pt_len: usize) -> usize {
-        let remainder = pt_len % BLOCK_SIZE;
-        return match remainder == 0 {
-            true => BLOCK_SIZE,
-            false => BLOCK_SIZE - remainder,
-        };
     }
 
     /// cipher `plaintext` and write it to `buf`
-    /// `buf` must be of sufficient length, which is the multiple of 16 + `IV_SIZE`.
-    /// if `ciphertext.len() % 16 == 0`, then `buf.len() = ciphertext.len() + 16`
-    /// pad it to a multiple of 16 otherwise.
-    pub fn encrypt(self, plaintext: &'a [u8], buf: &'a mut [u8]) -> Result<(), Box<dyn Error>> {
-        dbg!(plaintext.len());
-        dbg!(buf.len());
-        // make `iv`, then copy it into the first `IV_SIZE` bytes of `buf`
-        OsRng.try_fill_bytes(&mut buf[..IV_SIZE])?;
+    /// buf construction:
+    ///     - 12 bytes nonce (`NONCE_LEN`)
+    ///     - plaintext length
+    ///     - 16 bytes auth tag (`AUTH_TAG_LEN`)
+    pub fn encrypt(&self, plaintext: &'a [u8], buf: &'a mut [u8]) -> Result<(), Box<dyn Error>> {
+        // make `nonce`, then copy it into the first `IV_SIZE` bytes of `buf`
+        OsRng.fill_bytes(&mut buf[..NONCE_LEN]);
+
         // cipher `plaintext` and write to `buf`
-        SerpentCbcEnc::new_from_slices(&self.0, &buf[..IV_SIZE])?
-            .encrypt_padded_b2b_mut::<block_padding::Pkcs7>(plaintext, &mut buf[IV_SIZE..])?;
+        Aes256Gcm::new(&self.0).encrypt_in_place();
 
         Ok(())
     }
 
     pub fn decrypt(self, ciphertext: &'a [u8]) -> Result<Vec<u8>, Box<dyn Error>> {
         dbg!(ciphertext.len());
-        let nonce = &ciphertext[..IV_SIZE];
-        let ciphertext = &ciphertext[IV_SIZE..];
+        let nonce = &ciphertext[..NONCE_LEN];
+        let ciphertext = &ciphertext[NONCE_LEN..];
         dbg!(ciphertext.len());
         let mut buf: Vec<u8> = Vec::with_capacity(ciphertext.len());
-        SerpentCbcDec::new_from_slices(&self.0, nonce)?
-            .decrypt_padded_b2b_mut::<block_padding::Pkcs7>(ciphertext, &mut buf)?;
+        // SerpentCbcDec::new_from_slices(&self.0, nonce)?
+        // .decrypt_padded_b2b_mut::<block_padding::Pkcs7>(ciphertext, &mut buf)?;
         return Ok(buf.to_owned());
     }
 }
