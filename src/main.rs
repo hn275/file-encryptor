@@ -93,14 +93,11 @@ fn seal(cli: cli::CLI) {
     let block = crypto::Encryptor::new(&key);
 
     // encrypt data
-    let s: usize = plaintext.len() + crypto::NONCE_LEN + crypto::AUTH_TAG_LEN;
-    let mut ciphertext: Vec<u8> = crypto::make_buffer(s);
-    block
-        .encrypt(plaintext.as_slice(), &mut ciphertext)
-        .unwrap_or_else(|err| {
-            eprintln!("Failed to encrypt file:\n{}", err);
-            exit(1);
-        });
+    let ciphertext = block.encrypt(plaintext.as_slice()).unwrap_or_else(|err| {
+        eprintln!("Failed to encrypt file:\n{}", err);
+        exit(1);
+    });
+    dbg!(&ciphertext, &plaintext);
 
     // write out the bytes
     let c = crypto::encoding::Base64::encode(ciphertext.as_slice());

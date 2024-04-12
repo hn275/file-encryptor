@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aes-gcm = { version = "0.10.3", features = ["aes", "getrandom"] }
+aes-gcm = { version = "0.10.3", features = ["aes", "getrandom", "alloc"] }
 base64 = { version = "0.22.0", features = ["default"] }
 clap = { version = "4.5.4", features = ["derive"] }
 rand = { version = "0.8.5", features = ["getrandom"] }
