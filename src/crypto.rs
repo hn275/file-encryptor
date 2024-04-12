@@ -1,15 +1,15 @@
-use crypto::{self, digest::Digest, sha2, symmetriccipher::SymmetricCipherError};
+use crypto::{self, digest::Digest, sha2};
 use rand::RngCore;
-use std::error::Error;
+use std::{io};
 
 use aes_gcm::{
-    aead::{Aead, AeadCore, AeadInPlace, AeadMutInPlace, Key, KeyInit, OsRng},
-    aes::cipher,
-    Aes256Gcm, Nonce,
+    aead::{AeadInPlace, Key, KeyInit, OsRng},
+    Aes256Gcm, Nonce, Tag,
 };
 
 pub const NONCE_LEN: usize = 12;
 pub const AUTH_TAG_LEN: usize = 16;
+const PLAINTEXT_BYTE: usize = 28;
 
 pub mod encoding {
     use base64::{
@@ -50,47 +50,52 @@ impl<'a> Encryptor<'a> {
         return self.0;
     }
 
-    /// cipher `plaintext` and write it to `buf`
+    /// cipher `buf` in place
     /// `buf` construction:
     ///     - 12 bytes nonce (`NONCE_LEN`)
-    ///     - plaintext length
     ///     - 16 bytes auth tag (`AUTH_TAG_LEN`)
-    pub fn encrypt(&self, plaintext: &'a [u8]) -> Result<Vec<u8>, Box<dyn Error>> {
-        let size = plaintext.len() + NONCE_LEN + AUTH_TAG_LEN;
-        let mut ciphertext = make_buffer(size);
+    ///     - plaintext length
+    /// NOTE: The content of the ciphering message starts at the 28th byte.
+    pub fn encrypt_in_place(&self, buf: &mut [u8]) -> io::Result<()> {
+        if buf.len() < 28 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "buffer to small",
+            ));
+        }
 
-        // make `nonce`, then copy it into the first `IV_SIZE` bytes of `buf`
-        let mut nonce: [u8; 12] = [0; 12];
-        OsRng.fill_bytes(&mut nonce);
+        OsRng.fill_bytes(&mut buf[..NONCE_LEN]);
+        let nonce = Nonce::from_slice(&buf[..NONCE_LEN]).to_owned();
 
-        // cipher `plaintext` and write to `buf`
-        nonce.clone_from_slice(&ciphertext[..NONCE_LEN]);
-
-        ciphertext[..NONCE_LEN].clone_from_slice(&nonce);
-        ciphertext[NONCE_LEN..].copy_from_slice(
-            Aes256Gcm::new(&self.key())
-                .encrypt(&nonce.into(), plaintext)
-                .unwrap()
-                .as_slice(),
+        let tag = Aes256Gcm::new(&self.key()).encrypt_in_place_detached(
+            &nonce,
+            b"",
+            &mut buf[PLAINTEXT_BYTE..],
         );
 
-        return Ok(ciphertext);
+        match tag {
+            Ok(tag) => {
+                buf[NONCE_LEN..PLAINTEXT_BYTE].copy_from_slice(&tag.as_slice());
+                return Ok(());
+            }
+            Err(err) => return Err(io::Error::new(io::ErrorKind::Other, err.to_string())),
+        };
     }
 
-    pub fn decrypt(self, ciphertext: &'a [u8]) -> Result<Vec<u8>, Box<dyn Error>> {
-        let nonce = &ciphertext[..NONCE_LEN];
-        let auth_tag_byte = ciphertext.len() - AUTH_TAG_LEN;
-        let tag = &ciphertext[auth_tag_byte..];
-        let ciphertext = &ciphertext[NONCE_LEN..auth_tag_byte];
+    pub fn decrypt_in_place(self, buf: &'a mut [u8]) -> io::Result<()> {
+        if buf.len() < 28 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "buffer to small",
+            ));
+        }
 
-        let mut buf: Vec<u8> = make_buffer(ciphertext.len());
-        buf.copy_from_slice(&ciphertext);
-
+        let nonce = Nonce::from_slice(&buf[..NONCE_LEN]).to_owned();
+        let tag = Tag::from_slice(&buf[NONCE_LEN..PLAINTEXT_BYTE]).to_owned();
         Aes256Gcm::new(&self.0)
-            .decrypt_in_place_detached(nonce.into(), b"", &mut buf, tag.into())
-            .unwrap_or_else(|err| println!("{}", err.to_owned()));
-
-        return Ok(buf.to_owned());
+            .decrypt_in_place_detached(&nonce, b"", &mut buf[PLAINTEXT_BYTE..], &tag)
+            .unwrap();
+        return Ok(());
     }
 }
 
@@ -115,11 +120,15 @@ mod tests {
         ];
 
         let plaintext = b"Hello world!";
-        let cipher = Encryptor::new(&key);
-        let ciphertext = cipher.encrypt(plaintext).unwrap();
-        assert_ne!(plaintext, ciphertext.as_slice());
+        let mut buf = make_buffer(plaintext.len() + NONCE_LEN + AUTH_TAG_LEN);
+        buf[PLAINTEXT_BYTE..].copy_from_slice(plaintext);
 
-        let pt = cipher.decrypt(&ciphertext).unwrap();
-        assert_eq!(plaintext, pt.as_slice());
+        let cipher = Encryptor::new(&key);
+
+        cipher.encrypt_in_place(&mut buf).unwrap();
+        assert_ne!(buf[PLAINTEXT_BYTE..], *b"Hello world!");
+
+        cipher.decrypt_in_place(&mut buf).unwrap();
+        assert_eq!(&buf[PLAINTEXT_BYTE..], *b"Hello world!");
     }
 }
