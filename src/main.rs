@@ -2,7 +2,7 @@ use clap::Parser;
 use crypto::aesgcm::OVERHEAD;
 use std::{
     fs,
-    io::{self, Read, Write},
+    io::{self, Read},
     path, process,
 };
 
