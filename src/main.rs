@@ -1,141 +1,158 @@
 use clap::Parser;
+use crypto::aesgcm::OVERHEAD;
 use std::{
     fs,
     io::{self, Read, Write},
-    path::Path,
-    process::exit,
+    path, process,
 };
 
 mod cli;
 mod crypto;
 
+const MINIMUM_KEY_LEN: usize = 8;
+
 fn main() {
     let cli = cli::CLI::parse();
+
     match cli.command {
         cli::Command::Open => open(cli),
         cli::Command::Seal => seal(cli),
-    };
-}
-
-fn open(cli: cli::CLI) {
-    // input file handler
-    let input_file = Path::new(&cli.file_name);
-    let ciphertext = fs::read(&input_file).unwrap_or_else(|err| {
-        eprintln!("Failed to read input file:\n{err}");
-        exit(1);
-    });
-
-    let ciphertext = crypto::encoding::Base64::decode(&ciphertext).unwrap_or_else(|err| {
-        eprintln!("Failed to decode input file:\n{}", err);
-        exit(1);
-    });
-
-    // output file handler
-    let mut output_file = make_file_out(&cli.out).unwrap_or_else(|err| {
-        eprintln!("Failed to open output file {}:\n{}", &cli.out, err);
-        exit(1);
-    });
-
-    // read encryption key
-    let password = rpassword::prompt_password("Enter encryption key: ").unwrap_or_else(|err| {
-        eprintln!("Failed to read encryption key:\n{}", err);
-        exit(1);
-    });
-
-    // make cipher block
-    let mut key: [u8; 32] = [0; 32];
-    crypto::Encoding::sha256(&mut key, password.as_bytes());
-    let block = crypto::Encryptor::new(&key);
-    let plaintext = block.decrypt(&ciphertext).unwrap_or_else(|err| {
-        eprintln!("Failed to decrypt data:\n{}", err);
-        exit(1);
-    });
-
-    println!("{}", std::str::from_utf8(&plaintext).unwrap());
-}
-
-fn seal(cli: cli::CLI) {
-    // input file handler
-    let input_file = Path::new(&cli.file_name);
-    let plaintext = fs::read(&input_file).unwrap_or_else(|err| {
-        eprintln!("Failed to read input file:\n{err}");
-        exit(1);
-    });
-
-    // let plaintext = crypto::Encoding::b
-
-    // output file handler
-    let mut output_file = make_file_out(&cli.out).unwrap_or_else(|err| {
-        eprintln!("Failed to open output file {}:\n{}", &cli.out, err);
-        exit(1);
-    });
-
-    // read encryption key
-    let password = rpassword::prompt_password("Enter encryption key: ").unwrap_or_else(|err| {
-        eprintln!("Failed to read encryption key:\n{}", err);
-        exit(1);
-    });
-
-    let confirm_password =
-        rpassword::prompt_password("Confirm encryption key: ").unwrap_or_else(|err| {
-            eprintln!("Failed to read encryption key:\n{}", err);
-            exit(1);
-        });
-
-    if password != confirm_password {
-        println!("Failed to confirm encryption key.");
-        exit(0);
     }
-
-    // make cipher block
-    let mut key: [u8; 32] = [0; 32];
-    crypto::Encoding::sha256(&mut key, password.as_bytes());
-    let block = crypto::Encryptor::new(&key);
-
-    // encrypt data
-    let ciphertext = block.encrypt(plaintext.as_slice()).unwrap_or_else(|err| {
-        eprintln!("Failed to encrypt file:\n{}", err);
-        exit(1);
-    });
-    dbg!(&ciphertext, &plaintext);
-
-    // write out the bytes
-    let c = crypto::encoding::Base64::encode(ciphertext.as_slice());
-    match output_file.write(c.as_bytes()) {
-        Err(err) => {
-            eprintln!("Failed to write to output file:\n{}", err)
+    .unwrap_or_else(|err| match err.kind() {
+        io::ErrorKind::AlreadyExists => process::exit(0), // user confirmed, no need for error
+        _ => {
+            eprintln!("{}", err);
+            process::exit(1);
         }
-        Ok(n) => {
-            println!(
-                "{} encrypted. Wrote {} bytes to output file {}",
-                &cli.file_name, n, &cli.out
+    });
+}
+
+fn open(cli: cli::CLI) -> io::Result<()> {
+    // check for input and output file existence
+    // if output file exist and user does not want to overwrite it, exit
+    cli.validate_inout_file()?;
+
+    // open input file, read content into buffer
+    let file_len: usize = path::Path::new(&cli.input_file)
+        .metadata()?
+        .len()
+        .try_into()
+        .map_err(|err| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Failed to convert file length:\n{}", err),
             )
-        }
-    };
-}
+        })?;
 
-fn make_file_out(file_name: &str) -> io::Result<fs::File> {
-    // open output file
-    let path = std::path::Path::new(file_name);
-    let mut output_file_opt = fs::OpenOptions::new();
+    let mut buf = crypto::make_buffer(file_len);
+    fs::OpenOptions::new()
+        .read(true)
+        .open(&cli.input_file)?
+        .read_exact(&mut buf)?;
 
-    if path.exists() {
-        let mut overwrite: [u8; 1] = [0];
-        print!("{} found. Overwrite? [y/n]: ", file_name);
-        io::stdout().flush()?;
-
-        let stdin = io::stdin();
-        stdin.lock().read(&mut overwrite)?;
-        match overwrite[0] == b'y' {
-            true => output_file_opt.truncate(true),
-            false => {
-                eprintln!("Ouput file exists.");
-                exit(1);
-            }
-        };
-    } else {
-        output_file_opt.create_new(true);
+    // make encryption key
+    let password = rpassword::prompt_password(format!(
+        "Enter encryption key (minimum {} characters): ",
+        MINIMUM_KEY_LEN
+    ))?;
+    if password.len() < MINIMUM_KEY_LEN {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "Encryption key must be at least must be {} character long.",
+                MINIMUM_KEY_LEN
+            ),
+        ));
     }
 
-    return output_file_opt.write(true).open(&path);
+    let mut key: [u8; 32] = [0; 32];
+    crypto::sha256::encode(&mut key, password.as_bytes());
+
+    // make aad
+    let aad: Option<[u8; 32]> = if buf[0] == 0 {
+        None
+    } else {
+        // read `aad`
+        let aad_str = rpassword::prompt_password("Enter additional authenticate data (AAD): ")?;
+        if aad_str == "" {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "AAD required, but not provided.",
+            ));
+        }
+
+        let mut buf = [0 as u8; 32];
+        crypto::sha256::encode(&mut buf, aad_str.as_bytes()); // remove the trailing new line
+        Some(buf)
+    };
+
+    // decrypt
+    crypto::aesgcm::Encryptor::new(&key).decrypt(&mut buf, &aad)?;
+    return cli.write_out(&buf[OVERHEAD..]);
+}
+
+fn seal(cli: cli::CLI) -> io::Result<()> {
+    // check for output file existence
+    // if exist and user does not want to overwrite it, exit
+    cli.validate_inout_file()?;
+
+    // open input file, read content into buffer
+    let file_len: usize = path::Path::new(&cli.input_file)
+        .metadata()?
+        .len()
+        .try_into()
+        .map_err(|err| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Failed to convert file length:\n{}", err),
+            )
+        })?;
+
+    let mut buf = crypto::make_buffer(file_len + crypto::aesgcm::OVERHEAD);
+    fs::OpenOptions::new()
+        .read(true)
+        .open(&cli.input_file)?
+        .read_exact(&mut buf[crypto::aesgcm::OVERHEAD..])?;
+
+    // make encryption key
+    let password = rpassword::prompt_password(format!(
+        "Enter encryption key (minimum {} characters): ",
+        MINIMUM_KEY_LEN
+    ))?;
+    if password.len() < MINIMUM_KEY_LEN {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "Encryption key must be at least must be {} character long.",
+                MINIMUM_KEY_LEN
+            ),
+        ));
+    }
+    let conf_password = rpassword::prompt_password("Confirm encryption key: ")?;
+    if password != conf_password {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Failed to confirm encryption key.",
+        ));
+    }
+
+    let mut key: [u8; 32] = [0; 32];
+    crypto::sha256::encode(&mut key, password.as_bytes());
+
+    // read `aad`
+    let aad_input = rpassword::prompt_password(
+        "Enter additional authenticate data (AAD), leave blank to skip: ",
+    )?;
+    let aad: Option<[u8; 32]> = if aad_input.len() == 0 {
+        None
+    } else {
+        let mut buf = [0 as u8; 32];
+        crypto::sha256::encode(&mut buf, aad_input.as_bytes()); // remove the trailing new line
+        Some(buf)
+    };
+
+    // encrypt
+    crypto::aesgcm::Encryptor::new(&key).encrypt(&mut buf, &aad)?;
+
+    return cli.write_out(&buf);
 }
