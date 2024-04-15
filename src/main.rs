@@ -14,9 +14,9 @@ const MINIMUM_KEY_LEN: usize = 8;
 fn main() {
     let cli = cli::CLI::parse();
 
-    match cli.command {
-        cli::Command::Open => open(cli),
-        cli::Command::Seal => seal(cli),
+    match cli.action {
+        cli::Action::Open => open(cli),
+        cli::Action::Seal => seal(cli),
     }
     .unwrap_or_else(|err| match err.kind() {
         io::ErrorKind::AlreadyExists => process::exit(0), // user confirmed, no need for error

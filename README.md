@@ -42,8 +42,8 @@ Usage: file-encryptor [OPTIONS] <COMMAND> <INPUT_FILE>
 Arguments:
   <COMMAND>
           Possible values:
-          - encrypt: Encrypt a file
-          - decrypt: Decrypt a file
+          - seal: Encrypt a file
+          - open: Decrypt a file
 
   <INPUT_FILE>
           File to encrypt/decrypt

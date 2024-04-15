@@ -5,21 +5,33 @@ use std::{
     path,
 };
 
+/// A small Rust program to deal with file encryption.
 #[derive(Parser, Debug)]
 pub struct CLI {
+    /// Action to perform on the input file
     #[arg(value_enum)]
-    pub command: Command,
+    pub action: Action,
 
-    /// File to encrypt/decrypt
+    /// Input file
     pub input_file: String,
 
     /// output file
-    #[arg(short, long, default_value = "file-encryptor.out")]
-    pub out: String,
+    #[arg(short, long)]
+    pub write: Option<String>,
+
+    /// Key used to perform the ciphering action
+    /// TODO: implement this
+    #[arg(short, long)]
+    pub key: Option<String>,
+
+    /// Receiver of the file, this will be used as authenticated data.
+    /// TODO: implement this
+    #[arg(short, long)]
+    pub receiver: Option<String>,
 }
 
 #[derive(ValueEnum, Clone, Debug)]
-pub enum Command {
+pub enum Action {
     /// Decrypt a file
     Open,
 
@@ -37,13 +49,21 @@ impl CLI {
             ));
         }
 
-        let output_path = path::Path::new(&self.out);
+        let output_path = if let Some(output_file) = &self.write {
+            path::Path::new(output_file)
+        } else {
+            return Ok(());
+        };
 
         if !output_path.exists() {
             return Ok(());
         }
 
-        print!("{} exists, overwrite? [y/n]: ", &self.out);
+        let output_file_name = output_path.to_str().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "invalid output file name")
+        })?;
+
+        print!("{} exists, overwrite? [y/n]: ", output_file_name);
         io::stdout().flush()?;
 
         let mut user_choice = [0 as u8; 1];
@@ -51,7 +71,7 @@ impl CLI {
         if user_choice != "y".as_bytes() && user_choice != "Y".as_bytes() {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
-                format!("output file {} found.", &self.out),
+                format!("output file {} found.", output_file_name),
             ));
         }
         return Ok(());
@@ -59,7 +79,17 @@ impl CLI {
 
     /// when this function is called, the new file will either be truncated, or created.
     pub fn write_out(&self, output: &[u8]) -> io::Result<()> {
-        let output_path = path::Path::new(&self.out);
+        let output_path = if let Some(output_path) = &self.write {
+            path::Path::new(output_path)
+        } else {
+            io::stdout().lock().write_all(output)?;
+            return Ok(());
+        };
+
+        let output_file_name = output_path.to_str().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "invalid output file path")
+        })?;
+
         let n = fs::OpenOptions::new()
             .truncate(true)
             .write(true)
@@ -70,7 +100,7 @@ impl CLI {
         println!(
             "
 Success, wrote {} bytes to {}",
-            n, &self.out
+            n, output_file_name
         );
         return Ok(());
     }
