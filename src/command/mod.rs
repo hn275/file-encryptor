@@ -1,4 +1,7 @@
+use std::io;
+
 use clap::{Parser, Subcommand};
+pub mod keygen;
 
 /// A small Rust program to deal with file encryption.
 #[derive(Parser, Debug)]
@@ -51,12 +54,9 @@ pub enum Action {
     },
 
     /// Read in a key, process and hash. The input key will be read in _at most 64 bytes_.
-    KeyGen {
-        /// password
-        #[arg(short, long)]
-        password: Option<String>,
+    KeyGen(keygen::KeyGen),
+}
 
-        #[arg(short, long)]
-        base64: bool,
-    },
+pub trait Command {
+    fn handle(&self) -> Result<(), io::Error>;
 }

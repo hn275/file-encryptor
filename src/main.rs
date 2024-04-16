@@ -1,29 +1,28 @@
-use aes_gcm::aead::{rand_core::RngCore, OsRng};
 use clap::Parser;
+use command::Command;
 use crypto::{encoding::sha256, encryptor};
 use std::{
     fs,
-    io::{self, BufRead, Read, Write},
+    io::{self, Read},
     process,
 };
 
-mod cli;
+mod command;
 mod crypto;
 
-const MINIMUM_KEY_LEN: usize = 8;
 const BUF_SIZE: usize = 0x80000; // 512kb
 
 fn main() {
-    let cmd = cli::CLI::parse();
+    let cmd = command::CLI::parse();
 
     match cmd.action {
-        cli::Action::Open {
+        command::Action::Open {
             input_file,
             write,
             aad,
         } => open(input_file, write, aad),
-        cli::Action::Seal { .. } => seal(cmd),
-        cli::Action::KeyGen { password, base64 } => key_gen(password, base64),
+        command::Action::Seal { .. } => seal(cmd),
+        command::Action::KeyGen(k) => k.handle(),
     }
     .unwrap_or_else(|err| match err.kind() {
         io::ErrorKind::AlreadyExists => process::exit(0), // user confirmed, no need for error
@@ -32,19 +31,6 @@ fn main() {
             process::exit(1);
         }
     });
-}
-
-fn key_gen(password: Option<String>, base64_output: bool) -> io::Result<()> {
-    let mut key_buf: [u8; 32] = [0; 32];
-    match password {
-        None => OsRng.fill_bytes(&mut key_buf),
-        Some(password) => crypto::encoding::sha256::encode(&mut key_buf, password.as_bytes()),
-    };
-    if !base64_output {
-        io::stdout().lock().write_all(&key_buf)?;
-        return Ok(());
-    }
-    Ok(())
 }
 
 fn open(input_file: String, write: Option<String>, aad: Option<String>) -> io::Result<()> {
@@ -131,7 +117,7 @@ fn open(input_file: String, write: Option<String>, aad: Option<String>) -> io::R
     return Ok(());
 }
 
-fn seal(cli: cli::CLI) -> io::Result<()> {
+fn seal(cli: command::CLI) -> io::Result<()> {
     /*
     // check for output file existence
     // if exist and user does not want to overwrite it, exit
