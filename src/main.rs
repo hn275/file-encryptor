@@ -1,22 +1,29 @@
+use aes_gcm::aead::{rand_core::RngCore, OsRng};
 use clap::Parser;
-use crypto::aesgcm::OVERHEAD;
+use crypto::{encoding::sha256, encryptor};
 use std::{
     fs,
-    io::{self, Read},
-    path, process,
+    io::{self, BufRead, Read, Write},
+    process,
 };
 
 mod cli;
 mod crypto;
 
 const MINIMUM_KEY_LEN: usize = 8;
+const BUF_SIZE: usize = 0x80000; // 512kb
 
 fn main() {
-    let cli = cli::CLI::parse();
+    let cmd = cli::CLI::parse();
 
-    match cli.action {
-        cli::Action::Open => open(cli),
-        cli::Action::Seal => seal(cli),
+    match cmd.action {
+        cli::Action::Open {
+            input_file,
+            write,
+            aad,
+        } => open(input_file, write, aad),
+        cli::Action::Seal { .. } => seal(cmd),
+        cli::Action::KeyGen { password, base64 } => key_gen(password, base64),
     }
     .unwrap_or_else(|err| match err.kind() {
         io::ErrorKind::AlreadyExists => process::exit(0), // user confirmed, no need for error
@@ -27,20 +34,50 @@ fn main() {
     });
 }
 
-fn open(cli: cli::CLI) -> io::Result<()> {
-    // check for input and output file existence
-    // if output file exist and user does not want to overwrite it, exit
-    cli.validate_inout_file()?;
+fn key_gen(password: Option<String>, base64_output: bool) -> io::Result<()> {
+    let mut key_buf: [u8; 32] = [0; 32];
+    match password {
+        None => OsRng.fill_bytes(&mut key_buf),
+        Some(password) => crypto::encoding::sha256::encode(&mut key_buf, password.as_bytes()),
+    };
+    if !base64_output {
+        io::stdout().lock().write_all(&key_buf)?;
+        return Ok(());
+    }
+    Ok(())
+}
 
+fn open(input_file: String, write: Option<String>, aad: Option<String>) -> io::Result<()> {
+    // read key
+    let mut key: sha256::Digest = [0; 32];
+    io::stdin().lock().read_exact(&mut key)?;
+    let mut i_stream = fs::OpenOptions::new().read(true).open(&input_file)?;
+    let mut buf: [u8; BUF_SIZE] = [0; BUF_SIZE];
+    loop {
+        // TODO: pad buf for some data as well
+        let bytes_read = i_stream.read(&mut buf)?;
+        if bytes_read == 0 {
+            break;
+        }
+        dbg!(&bytes_read);
+
+        // thead?
+        encryptor::Encryptor::encrypt(&mut buf, &key, &aad)
+
+        //
+    }
+
+    /*
     // open input file, read content into buffer
-    let file_len: usize = path::Path::new(&cli.input_file)
+    let file_len: usize = path::Path::new("")
         .metadata()?
         .len()
         .try_into()
         .map_err(|err| {
+            dbg!(err);
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("Failed to convert file length:\n{}", err),
+                format!("failed to read input file."),
             )
         })?;
 
@@ -75,9 +112,10 @@ fn open(cli: cli::CLI) -> io::Result<()> {
         // read `aad`
         let aad_str = rpassword::prompt_password("Enter additional authenticate data (AAD): ")?;
         if aad_str == "" {
+            dbg!("missing aad");
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "AAD required, but not provided.",
+                "failed to decrypt file.",
             ));
         }
 
@@ -89,9 +127,12 @@ fn open(cli: cli::CLI) -> io::Result<()> {
     // decrypt
     crypto::aesgcm::Encryptor::new(&key).decrypt(&mut buf, &aad)?;
     return cli.write_out(&buf[OVERHEAD..]);
+    */
+    return Ok(());
 }
 
 fn seal(cli: cli::CLI) -> io::Result<()> {
+    /*
     // check for output file existence
     // if exist and user does not want to overwrite it, exit
     cli.validate_inout_file()?;
@@ -155,4 +196,6 @@ fn seal(cli: cli::CLI) -> io::Result<()> {
     crypto::aesgcm::Encryptor::new(&key).encrypt(&mut buf, &aad)?;
 
     return cli.write_out(&buf);
+    */
+    Ok(())
 }
