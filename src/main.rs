@@ -1,6 +1,6 @@
 use clap::Parser;
 use command::Command;
-use crypto::{encoding::sha256, encryptor};
+use crypto::encoding::sha256;
 use std::{
     fs,
     io::{self, Read},
@@ -21,7 +21,7 @@ fn main() {
             write,
             aad,
         } => open(input_file, write, aad),
-        command::Action::Seal { .. } => seal(cmd),
+        command::Action::Seal(enc) => enc.handle(),
         command::Action::KeyGen(k) => k.handle(),
     }
     .unwrap_or_else(|err| match err.kind() {
@@ -48,7 +48,7 @@ fn open(input_file: String, write: Option<String>, aad: Option<String>) -> io::R
         dbg!(&bytes_read);
 
         // thead?
-        encryptor::Encryptor::encrypt(&mut buf, &key, &aad)
+        // encryptor::Encryptor::encrypt(&mut buf, &key, &aad)
 
         //
     }

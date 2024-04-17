@@ -1,6 +1,7 @@
 use std::io;
 
 use clap::{Parser, Subcommand};
+pub mod encryptor;
 pub mod keygen;
 
 /// A small Rust program to deal with file encryption.
@@ -39,19 +40,7 @@ pub enum Action {
     },
 
     /// Encrypt a file
-    Seal {
-        /// input file
-        input_file: String,
-
-        /// output file to write to
-        #[arg(short, long)]
-        write: Option<String>,
-
-        /// additional authenticated data
-        /// TODO: implement this
-        #[arg(short, long)]
-        aad: Option<String>,
-    },
+    Seal(encryptor::Encryptor),
 
     /// Read in a key, process and hash. The input key will be read in _at most 64 bytes_.
     KeyGen(keygen::KeyGen),

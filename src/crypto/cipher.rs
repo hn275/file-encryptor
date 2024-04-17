@@ -11,12 +11,12 @@ pub const TAG_LEN: usize = 16;
 /// the first byte signifies if aad was used
 pub const OVERHEAD: usize = 1 + NONCE_LEN + TAG_LEN;
 
-pub struct Encryptor<'a>(&'a Key<Aes256Gcm>);
+pub struct Cipher<'a>(&'a Key<Aes256Gcm>);
 
-impl<'a> Encryptor<'a> {
-    pub fn new(key: &[u8]) -> Encryptor {
+impl<'a> Cipher<'a> {
+    pub fn new(key: &[u8]) -> Cipher {
         let key: &Key<Aes256Gcm> = Key::<Aes256Gcm>::from_slice(&key);
-        return Encryptor(key);
+        return Cipher(key);
     }
 
     fn key(&self) -> &Key<Aes256Gcm> {
@@ -124,7 +124,7 @@ mod tests {
         let mut buf = make_buffer(plaintext.len() + OVERHEAD);
         buf[OVERHEAD..].copy_from_slice(plaintext);
 
-        let cipher = Encryptor::new(&key);
+        let cipher = Cipher::new(&key);
 
         let aad: Option<[u8; 32]> = Some([0 as u8; 32]);
         cipher.encrypt(&mut buf, &aad).unwrap();
@@ -153,7 +153,7 @@ mod tests {
         let mut buf = make_buffer(plaintext.len() + OVERHEAD);
         buf[OVERHEAD..].copy_from_slice(plaintext);
 
-        let cipher = Encryptor::new(&key);
+        let cipher = Cipher::new(&key);
 
         let aad: Option<[u8; 32]> = Some([0 as u8; 32]);
         cipher.encrypt(&mut buf, &aad).unwrap();
