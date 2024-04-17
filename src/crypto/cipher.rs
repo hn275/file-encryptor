@@ -9,7 +9,7 @@ pub const NONCE_LEN: usize = 12;
 pub const TAG_LEN: usize = 16;
 
 /// the first byte signifies if aad was used
-pub const OVERHEAD: usize = 1 + NONCE_LEN + TAG_LEN;
+pub const OVERHEAD: usize = NONCE_LEN + TAG_LEN;
 
 pub struct Cipher<'a>(&'a Key<Aes256Gcm>);
 
@@ -23,12 +23,6 @@ impl<'a> Cipher<'a> {
         return self.0;
     }
 
-    /// cipher `buf` in place
-    /// `buf` construction:
-    ///     - 12 bytes nonce (`NONCE_LEN`)
-    ///     - 16 bytes auth tag (`AUTH_TAG_LEN`)
-    ///     - plaintext length
-    /// NOTE: The content of the ciphering message starts at the 28th byte.
     pub fn encrypt(&self, buf: &mut [u8], aad: &Option<[u8; 32]>) -> io::Result<()> {
         if buf.len() < OVERHEAD {
             return Err(io::Error::new(
@@ -41,19 +35,13 @@ impl<'a> Cipher<'a> {
 
         // aad
         let aad = match aad {
-            Some(aad) => {
-                meta[0] = 1;
-                aad.as_slice()
-            }
-            None => {
-                meta[0] = 0;
-                [0 as u8; 0].as_slice()
-            }
+            Some(aad) => aad.as_slice(),
+            None => &[0 as u8; 0],
         };
 
         // nonce
-        OsRng.fill_bytes(&mut meta[1..NONCE_LEN + 1]);
-        let nonce = Nonce::from_slice(&meta[1..NONCE_LEN + 1]);
+        OsRng.fill_bytes(&mut meta[..NONCE_LEN]);
+        let nonce = Nonce::from_slice(&meta[..NONCE_LEN]);
 
         // encrypt and copy tag
         let tag = Aes256Gcm::new(&self.key())
@@ -62,7 +50,7 @@ impl<'a> Cipher<'a> {
                 dbg!(err);
                 return io::Error::new(io::ErrorKind::Other, "failed to encrypt data.");
             })?;
-        buf[1 + NONCE_LEN..OVERHEAD].copy_from_slice(tag.as_slice());
+        buf[NONCE_LEN..OVERHEAD].copy_from_slice(tag.as_slice());
 
         return Ok(());
     }
@@ -84,14 +72,14 @@ impl<'a> Cipher<'a> {
 
         let aad = match aad {
             Some(aad) => aad.as_slice(),
-            None => [0 as u8; 0].as_slice(),
+            None => &[0 as u8; 0],
         };
 
         let (meta, buf_slize) = buf.split_at_mut(OVERHEAD);
         let meta: &[u8] = &meta;
 
-        let nonce = Nonce::from_slice(&meta[1..NONCE_LEN + 1]);
-        let tag = Tag::from_slice(&meta[1 + NONCE_LEN..OVERHEAD]);
+        let nonce = Nonce::from_slice(&meta[..NONCE_LEN]);
+        let tag = Tag::from_slice(&meta[NONCE_LEN..OVERHEAD]);
 
         Aes256Gcm::new(&self.0)
             .decrypt_in_place_detached(&nonce, aad, buf_slize, &tag)
@@ -108,7 +96,6 @@ impl<'a> Cipher<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::make_buffer;
 
     #[test]
     fn test_encrypt() {
