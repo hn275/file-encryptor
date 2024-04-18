@@ -1,17 +1,21 @@
 use clap::Parser;
 use std::{
     fs,
-    io::{self, Read, Write},
+    io::{self, Read},
     path,
 };
 
 use super::Command;
-use crate::crypto::{self, encoding};
+use crate::crypto::{self, cipher, encoding};
 
 #[derive(Parser, Debug, Clone)]
 pub struct Decryptor {
     /// input file
     input_file: String,
+
+    /// output file
+    #[arg(short, long)]
+    write: Option<String>,
 
     /// (optional) additional authenticated data
     #[arg(short, long)]
@@ -28,7 +32,6 @@ impl Command for Decryptor {
             .len()
             .try_into()
             .expect("failed to convert u64 to usize");
-
         let mut file_buf = crypto::cipher::make_buffer(file_len);
         fs::OpenOptions::new()
             .read(true)
@@ -44,9 +47,8 @@ impl Command for Decryptor {
             }
         };
 
-        crypto::cipher::Cipher::new(&key).decrypt(&mut file_buf, &None)?;
-        io::stdout()
-            .lock()
-            .write_all(&file_buf[crypto::cipher::OVERHEAD..])
+        crypto::cipher::Cipher::new(&key).decrypt(&mut file_buf, &aad)?;
+
+        self.output(&file_buf[cipher::OVERHEAD..], &self.write)
     }
 }

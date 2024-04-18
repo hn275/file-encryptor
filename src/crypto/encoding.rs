@@ -6,6 +6,4 @@ pub mod sha256 {
         sha256.input(data);
         sha256.result(buf);
     }
-
-    pub type Digest = [u8; 32];
 }

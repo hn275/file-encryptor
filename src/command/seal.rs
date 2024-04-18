@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{
     fs,
-    io::{self, Read, Write},
+    io::{self, Read},
     path,
 };
 
@@ -12,6 +12,10 @@ use crate::crypto::{self, cipher::OVERHEAD, encoding};
 pub struct Encryptor {
     /// input file
     input_file: String,
+
+    /// (optional) output file
+    #[arg(short, long)]
+    write: Option<String>,
 
     /// (optional) additional authenticated data
     #[arg(short, long)]
@@ -44,7 +48,8 @@ impl Command for Encryptor {
             }
         };
 
-        crypto::cipher::Cipher::new(&key).encrypt(&mut file_buf, &None)?;
-        io::stdout().lock().write_all(&file_buf)
+        crypto::cipher::Cipher::new(&key).encrypt(&mut file_buf, &aad)?;
+
+        self.output(&file_buf, &self.write)
     }
 }
