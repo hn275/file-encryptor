@@ -1,4 +1,4 @@
-use std::{fs, io::{self, Write}};
+use std::io;
 
 use clap::{Parser, Subcommand};
 pub mod keygen;
@@ -11,39 +11,20 @@ pub struct CLI {
     /// Action to perform on the input file
     #[command(subcommand)]
     pub action: Action,
-
-    /// Key used to perform the ciphering action
-    /// TODO: implement this
-    #[arg(short, long)]
-    pub key: Option<String>,
-
-    /// Receiver of the file, this will be used as authenticated data.
-    /// TODO: implement this
-    #[arg(short, long)]
-    pub auth_data: Option<String>,
 }
 
 #[derive(Subcommand, Clone, Debug)]
 pub enum Action {
-    /// Decrypt a file
+    /// generate a key, from pure random bytes, or from an input password.
+    Keygen(keygen::KeyGen),
+
+    /// open an encrypted file
     Open(open::Decryptor),
 
-    /// Encrypt a file
+    /// seal a plaintext file
     Seal(seal::Encryptor),
-
-    /// Read in a key, process and hash. The input key will be read in _at most 64 bytes_.
-    Keygen(keygen::KeyGen),
 }
 
 pub trait Command {
     fn handle(&self) -> Result<(), io::Error>;
-
-    fn output(&self, buf: &[u8], outfile: &Option<String>) -> io::Result<()> {
-        match outfile {
-            None => io::stdout().lock().write_all(buf),
-            Some(f) => {
-                fs::OpenOptions::new().write(true).truncate(true).create(true).open(f)?.write_all(buf)
-            }
-        }
-    }
 }
