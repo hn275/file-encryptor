@@ -8,17 +8,14 @@ use aes_gcm::{
 pub const NONCE_LEN: usize = 12;
 pub const TAG_LEN: usize = 16;
 pub const OVERHEAD: usize = NONCE_LEN + TAG_LEN;
+pub const KEY_LEN: usize = 32;
 
 pub struct Cipher<'a>(&'a Key<Aes256Gcm>);
 
 impl<'a> Cipher<'a> {
-    pub fn new(key: &[u8]) -> Cipher {
-        let key: &Key<Aes256Gcm> = Key::<Aes256Gcm>::from_slice(&key);
+    pub fn new(key: &[u8; KEY_LEN]) -> Cipher {
+        let key: &Key<Aes256Gcm> = Key::<Aes256Gcm>::from_slice(key);
         return Cipher(key);
-    }
-
-    fn key(&self) -> &Key<Aes256Gcm> {
-        return self.0;
     }
 
     pub fn encrypt(&self, buf: &mut [u8], aad: &Option<[u8; 32]>) -> io::Result<()> {
@@ -42,7 +39,7 @@ impl<'a> Cipher<'a> {
         let nonce = Nonce::from_slice(&meta[..NONCE_LEN]);
 
         // encrypt and copy tag
-        let tag = Aes256Gcm::new(&self.key())
+        let tag = Aes256Gcm::new(&self.0)
             .encrypt_in_place_detached(&nonce, aad, msg)
             .map_err(|err| {
                 dbg!(err);
@@ -123,7 +120,6 @@ mod tests {
         // ciphertext is not the same as plaintext
         assert_ne!(&buf[OVERHEAD..], *b"Hello world!");
     }
-
 
     #[test]
     fn test_decrypt() {

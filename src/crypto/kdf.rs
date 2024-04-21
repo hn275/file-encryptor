@@ -1,22 +1,40 @@
+use crate::crypto::cipher;
 use std::io;
 
-/// the following settings yield a 3 second key derivation time on my machine
-/// configure these to whatever, but:
 /// https://tobtu.com/minimum-password-settings/
-const LOG_N: u8 = 16;
-const R: u32 = 3;
-const P: u32 = 2;
-const KEYLEN: usize = 32;
+struct Setting {
+    log_n: u8,
+    r: u32,
+    p: u32,
+}
+
+impl Setting {
+    fn new() -> io::Result<Setting> {
+        Ok(Setting::default())
+    }
+}
+
+impl Default for Setting {
+    fn default() -> Self {
+        Setting {
+            log_n: 17,
+            r: 8,
+            p: 1,
+        }
+    }
+}
 
 /// generating key with the given password with kdf "scrypt".
-pub fn generate(password: &[u8], key_buf: &mut [u8; KEYLEN]) -> io::Result<()> {
+pub fn generate(password: &[u8], key_buf: &mut [u8; cipher::KEY_LEN]) -> io::Result<()> {
     if password.len() < 8 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Password too short. Must be at least 8 characters.",
         ));
     }
-    let param = scrypt::Params::new(LOG_N, R, P, KEYLEN)
+
+    let setting = Setting::new()?;
+    let param = scrypt::Params::new(setting.log_n, setting.r, setting.p, cipher::KEY_LEN)
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?;
 
     scrypt::scrypt(password, &[], &param, key_buf)
