@@ -22,7 +22,7 @@ You can use this tool for various purposes, though here are some examples:
 ## Installation
 
 ```sh
-cargo install
+cargo install --path .
 ```
 
 ## Usage
