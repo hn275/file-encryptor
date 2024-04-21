@@ -1,6 +1,10 @@
 use crate::crypto::cipher;
 use std::io;
 
+const LOG_N: u8 = 16;
+const R: u32 = 8;
+const P: u32 = 2;
+
 /// https://tobtu.com/minimum-password-settings/
 struct Setting {
     log_n: u8,
@@ -17,9 +21,9 @@ impl Setting {
 impl Default for Setting {
     fn default() -> Self {
         Setting {
-            log_n: 17,
-            r: 8,
-            p: 1,
+            log_n: LOG_N,
+            r: R,
+            p: P,
         }
     }
 }
