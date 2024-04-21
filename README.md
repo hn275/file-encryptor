@@ -50,9 +50,9 @@ file-encryptor keygen -p "this is my password" > secret.key
 
 - NOTE: The AES256 key, which consists of 32 bytes, is produced with the
   [following configuration](https://tobtu.com/minimum-password-settings/) as parameters for KDF scrypt:
-  - $log_2N = 17$
+  - $log_2N = 16$
   - $R = 8$
-  - $P = 1$
+  - $P = 2$
 
 #### 2. Encrypting the file `foo.txt`
 
