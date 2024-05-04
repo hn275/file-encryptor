@@ -28,7 +28,7 @@ cargo install --path .
 ## Usage
 
 By default, all output will simply be written to standard output. I wanted a solution that offers
-flexibility for scripting.
+flexibility for scripting, see [examples](./examples/).
 
 ### Cookbook
 
