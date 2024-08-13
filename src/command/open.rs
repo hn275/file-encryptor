@@ -5,8 +5,10 @@ use std::{
     path,
 };
 
-use super::Command;
-use crate::crypto::{self, cipher, encoding};
+use crate::{
+    crypto::{self, cipher, encoding},
+    error, Command,
+};
 
 #[derive(Parser, Debug, Clone)]
 pub struct Decryptor {
@@ -19,7 +21,7 @@ pub struct Decryptor {
 }
 
 impl Command for Decryptor {
-    fn handle(&self) -> io::Result<()> {
+    fn handle(&self) -> error::Result<()> {
         let mut key: [u8; 32] = [0; 32];
         io::stdin().lock().read_exact(&mut key)?;
 
@@ -44,6 +46,9 @@ impl Command for Decryptor {
         };
 
         crypto::cipher::Cipher::new(&key).decrypt(&mut file_buf, &aad)?;
-        io::stdout().lock().write_all(&file_buf[cipher::OVERHEAD..])
+        Ok(io::stdout()
+            .lock()
+            .write_all(&file_buf[cipher::OVERHEAD..])?)
+
     }
 }
