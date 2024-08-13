@@ -6,7 +6,7 @@ mod crypto;
 mod error;
 
 fn main() -> error::Result<()> {
-    let cmd = command::CLI::parse();
+    let cmd = command::Cli::parse();
 
     match cmd.action {
         command::Action::Open(dec) => dec.handle(),

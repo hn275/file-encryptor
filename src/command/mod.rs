@@ -7,7 +7,7 @@ pub mod seal;
 
 /// A small Rust program to deal with file encryption.
 #[derive(Parser, Debug)]
-pub struct CLI {
+pub struct Cli {
     /// Action to perform on the input file
     #[command(subcommand)]
     pub action: Action,

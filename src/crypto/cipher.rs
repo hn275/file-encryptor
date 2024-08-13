@@ -31,7 +31,7 @@ impl<'a> Cipher<'a> {
         // aad
         let aad = match aad {
             Some(aad) => aad.as_slice(),
-            None => &[0 as u8; 0],
+            None => &[0_u8; 0],
         };
 
         // nonce
@@ -39,15 +39,15 @@ impl<'a> Cipher<'a> {
         let nonce = Nonce::from_slice(&meta[..NONCE_LEN]);
 
         // encrypt and copy tag
-        let tag = Aes256Gcm::new(&self.0)
-            .encrypt_in_place_detached(&nonce, aad, msg)
+        let tag = Aes256Gcm::new(self.0)
+            .encrypt_in_place_detached(nonce, aad, msg)
             .map_err(|err| {
                 dbg!(err);
-                return io::Error::new(io::ErrorKind::Other, "failed to encrypt data.");
+                io::Error::new(io::ErrorKind::Other, "failed to encrypt data.")
             })?;
         buf[NONCE_LEN..OVERHEAD].copy_from_slice(tag.as_slice());
 
-        return Ok(());
+        Ok(())
     }
 
     pub fn decrypt(self, buf: &'a mut [u8], aad: &Option<[u8; 32]>) -> io::Result<()> {
@@ -67,24 +67,23 @@ impl<'a> Cipher<'a> {
 
         let aad = match aad {
             Some(aad) => aad.as_slice(),
-            None => &[0 as u8; 0],
+            None => &[0_u8; 0],
         };
 
         let (meta, buf_slize) = buf.split_at_mut(OVERHEAD);
-        let meta: &[u8] = &meta;
-
         let nonce = Nonce::from_slice(&meta[..NONCE_LEN]);
         let tag = Tag::from_slice(&meta[NONCE_LEN..OVERHEAD]);
 
-        Aes256Gcm::new(&self.0)
-            .decrypt_in_place_detached(&nonce, aad, buf_slize, &tag)
+        Aes256Gcm::new(self.0)
+            .decrypt_in_place_detached(nonce, aad, buf_slize, tag)
             .map_err(|_| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
                     "failed to authenticated/decrypt data.",
                 )
             })?;
-        return Ok(());
+
+        Ok(())
     }
 }
 
@@ -169,8 +168,6 @@ mod tests {
 
 pub fn make_buffer(size: usize) -> Vec<u8> {
     let mut buf: Vec<u8> = Vec::with_capacity(size);
-    for _ in 0..size {
-        buf.push(0);
-    }
-    return buf;
+    buf.fill(0);
+    buf
 }

@@ -113,6 +113,6 @@ mod tests {
             engine2.update(keystream[keystream_ctr - 1 - i].as_bytes());
         }
 
-        assert_eq!(engine2.bytes(), engine1.bytes());
+        assert_eq!(engine1.bytes(), engine2.bytes());
     }
 }
