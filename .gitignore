@@ -1,4 +1,6 @@
 /target
+/test-input*
+/test-output*
 
 
 # Added by cargo
