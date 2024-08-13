@@ -1,6 +1,6 @@
-use std::io;
-
+use crate::error;
 use clap::{Parser, Subcommand};
+
 pub mod keygen;
 pub mod open;
 pub mod seal;
@@ -26,5 +26,5 @@ pub enum Action {
 }
 
 pub trait Command {
-    fn handle(&self) -> Result<(), io::Error>;
+    fn handle(&self) -> error::Result<()>;
 }
