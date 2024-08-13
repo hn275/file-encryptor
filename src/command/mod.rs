@@ -1,13 +1,13 @@
-use std::io;
-
+use crate::error;
 use clap::{Parser, Subcommand};
+
 pub mod keygen;
 pub mod open;
 pub mod seal;
 
 /// A small Rust program to deal with file encryption.
 #[derive(Parser, Debug)]
-pub struct CLI {
+pub struct Cli {
     /// Action to perform on the input file
     #[command(subcommand)]
     pub action: Action,
@@ -26,5 +26,5 @@ pub enum Action {
 }
 
 pub trait Command {
-    fn handle(&self) -> Result<(), io::Error>;
+    fn handle(&self) -> error::Result<()>;
 }

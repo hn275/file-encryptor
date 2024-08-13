@@ -1,3 +1,4 @@
+use crate::error;
 use clap::Parser;
 use std::{
     fs,
@@ -19,7 +20,7 @@ pub struct Encryptor {
 }
 
 impl Command for Encryptor {
-    fn handle(&self) -> io::Result<()> {
+    fn handle(&self) -> error::Result<()> {
         let mut key: [u8; 32] = [0; 32];
         io::stdin().lock().read_exact(&mut key)?;
 
@@ -45,6 +46,6 @@ impl Command for Encryptor {
         };
 
         crypto::cipher::Cipher::new(&key).encrypt(&mut file_buf, &aad)?;
-        io::stdout().lock().write_all(&file_buf)
+        Ok(io::stdout().lock().write_all(&file_buf)?)
     }
 }
