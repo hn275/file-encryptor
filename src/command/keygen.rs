@@ -91,3 +91,28 @@ impl Command for KeyGen {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_keygen() {
+        let keystream = vec![
+            String::from("Hello world 1"),
+            String::from("Hello world 2"),
+            String::from("Hello world 3"),
+        ];
+
+        let mut engine1 = Engine::new();
+        let mut engine2 = Engine::new();
+
+        let keystream_ctr = keystream.len();
+        for i in 0..keystream_ctr {
+            engine1.update(keystream[i].as_bytes());
+            engine2.update(keystream[keystream_ctr - 1 - i].as_bytes());
+        }
+
+        assert_eq!(engine2.bytes(), engine1.bytes());
+    }
+}
