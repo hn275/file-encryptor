@@ -87,6 +87,13 @@ impl<'a> Cipher<'a> {
     }
 }
 
+
+pub fn make_buffer(size: usize) -> Vec<u8> {
+    let mut buf: Vec<u8> = Vec::with_capacity(size);
+    buf.fill(0);
+    buf
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,14 +114,14 @@ mod tests {
 
         let cipher = Cipher::new(&key);
 
-        let aad: Option<[u8; 32]> = Some([0 as u8; 32]);
+        let aad: Option<[u8; 32]> = Some([0u8; 32]);
         cipher.encrypt(&mut buf, &aad).unwrap();
 
         // nonce is copied
-        assert_ne!(&buf[..NONCE_LEN], [0 as u8; 12]);
+        assert_ne!(&buf[..NONCE_LEN], [0u8; 12]);
 
         // tag is copied
-        assert_ne!(&buf[NONCE_LEN..OVERHEAD], [0 as u8; 12]);
+        assert_ne!(&buf[NONCE_LEN..OVERHEAD], [0_u8; 12]);
 
         // ciphertext is not the same as plaintext
         assert_ne!(&buf[OVERHEAD..], *b"Hello world!");
@@ -136,7 +143,7 @@ mod tests {
 
         let cipher = Cipher::new(&key);
 
-        let aad: Option<[u8; 32]> = Some([0 as u8; 32]);
+        let aad: Option<[u8; 32]> = Some([0_u8; 32]);
         cipher.encrypt(&mut buf, &aad).unwrap();
 
         cipher.decrypt(&mut buf, &aad).unwrap();
@@ -164,10 +171,4 @@ mod tests {
         cipher.decrypt(&mut buf, &None).unwrap();
         assert_eq!(&buf[OVERHEAD..], plaintext);
     }
-}
-
-pub fn make_buffer(size: usize) -> Vec<u8> {
-    let mut buf: Vec<u8> = Vec::with_capacity(size);
-    buf.fill(0);
-    buf
 }

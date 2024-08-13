@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_keygen() {
-        let keystream = vec![
+        let keystream = [
             String::from("Hello world 1"),
             String::from("Hello world 2"),
             String::from("Hello world 3"),
