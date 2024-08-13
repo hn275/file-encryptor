@@ -11,3 +11,4 @@ clap = { version = "4.5.4", features = ["derive"] }
 rpassword = "7.3.1"
 rust-crypto = "0.2.36"
 scrypt = { version = "0.11.0", default-features = false, features = ["std"] }
+aes = { version = "0.8.4" }
