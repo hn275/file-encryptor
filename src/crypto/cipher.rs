@@ -1,97 +1,59 @@
-use std::io;
+#![allow(dead_code)]
 
-use aes_gcm::{
-    aead::{rand_core::RngCore, AeadInPlace, Key, KeyInit, OsRng},
-    Aes256Gcm, Nonce, Tag,
-};
+pub const IV_SIZE: usize = 12;
+pub const BLOCK_SIZE: usize = 16;
+pub const KEY_SIZE: usize = 32;
 
-pub const NONCE_LEN: usize = 12;
-pub const TAG_LEN: usize = 16;
-pub const OVERHEAD: usize = NONCE_LEN + TAG_LEN;
-pub const KEY_LEN: usize = 32;
+pub type Key = [u8; KEY_SIZE];
+pub type Block = [u8; BLOCK_SIZE];
 
-pub struct Cipher<'a>(&'a Key<Aes256Gcm>);
+pub struct IV(Block);
 
-impl<'a> Cipher<'a> {
-    pub fn new(key: &[u8; KEY_LEN]) -> Cipher {
-        let key: &Key<Aes256Gcm> = Key::<Aes256Gcm>::from_slice(key);
-        return Cipher(key);
+impl IV {
+    pub fn new() -> Self {
+        use rand::RngCore;
+
+        let mut buf = Block::default();
+        rand::thread_rng().fill_bytes(&mut buf[..IV_SIZE]);
+
+        IV(buf)
     }
 
-    pub fn encrypt(&self, buf: &mut [u8], aad: &Option<[u8; 32]>) -> io::Result<()> {
-        if buf.len() < OVERHEAD {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "buffer to small",
-            ));
-        }
-
-        let (meta, msg) = buf.split_at_mut(OVERHEAD);
-
-        // aad
-        let aad = match aad {
-            Some(aad) => aad.as_slice(),
-            None => &[0_u8; 0],
-        };
-
-        // nonce
-        OsRng.fill_bytes(&mut meta[..NONCE_LEN]);
-        let nonce = Nonce::from_slice(&meta[..NONCE_LEN]);
-
-        // encrypt and copy tag
-        let tag = Aes256Gcm::new(self.0)
-            .encrypt_in_place_detached(nonce, aad, msg)
-            .map_err(|err| {
-                dbg!(err);
-                io::Error::new(io::ErrorKind::Other, "failed to encrypt data.")
-            })?;
-        buf[NONCE_LEN..OVERHEAD].copy_from_slice(tag.as_slice());
-
-        Ok(())
+    pub fn iv_bytes(&self) -> &[u8] {
+        &self.0[..IV_SIZE]
     }
 
-    pub fn decrypt(self, buf: &'a mut [u8], aad: &Option<[u8; 32]>) -> io::Result<()> {
-        if buf.len() < OVERHEAD {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "buffer to small",
-            ));
+    fn inc_counter(&mut self) {
+        let ctr_bytes = self.0[IV_SIZE..].as_mut();
+        let ctr_bound = ctr_bytes.len();
+        for i in 0..ctr_bound {
+            let byte = &mut ctr_bytes[ctr_bound - i - 1];
+            if *byte == 255 {
+                *byte = 0;
+                continue;
+            }
+            *byte += 1;
+            break;
         }
-
-        if buf[0] == 1 && aad.is_none() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid ciphertext.",
-            ));
-        }
-
-        let aad = match aad {
-            Some(aad) => aad.as_slice(),
-            None => &[0_u8; 0],
-        };
-
-        let (meta, buf_slize) = buf.split_at_mut(OVERHEAD);
-        let nonce = Nonce::from_slice(&meta[..NONCE_LEN]);
-        let tag = Tag::from_slice(&meta[NONCE_LEN..OVERHEAD]);
-
-        Aes256Gcm::new(self.0)
-            .decrypt_in_place_detached(nonce, aad, buf_slize, tag)
-            .map_err(|_| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "failed to authenticated/decrypt data.",
-                )
-            })?;
-
-        Ok(())
     }
 }
 
+pub struct Cipher<'a> {
+    key: Key,
+    iv: IV,
+    aad: Option<&'a [u8]>,
+}
 
-pub fn make_buffer(size: usize) -> Vec<u8> {
-    let mut buf: Vec<u8> = Vec::with_capacity(size);
-    buf.fill(0);
-    buf
+impl<'a> Cipher<'a> {
+    pub fn new(key: Key, iv: IV, aad: Option<&'a [u8]>) -> Self {
+        Self { key, iv, aad }
+    }
+
+    pub fn encrypt_block_inplace(&mut self, block: &mut Block) {}
+
+    pub fn decrypt_block(&mut self, block: &mut Block) {}
+
+    pub fn tag(&mut self) {}
 }
 
 #[cfg(test)]
@@ -99,76 +61,53 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_encrypt() {
-        let plaintext = "Hello world!".as_bytes();
-
-        // some random key bytes
-        let key: [u8; 32] = [
-            0x2f, 0x3a, 0x0b, 0x9c, 0x8e, 0x6d, 0x7f, 0x5a, 0x01, 0xf4, 0x63, 0x21, 0x8b, 0x4c,
-            0xef, 0xd2, 0x7d, 0xa8, 0x0e, 0x5b, 0xc7, 0x90, 0x6f, 0x58, 0xb2, 0x35, 0x49, 0x77,
-            0xa2, 0xe9, 0xd1, 0x80,
-        ];
-
-        let mut buf = make_buffer(plaintext.len() + OVERHEAD);
-        buf[OVERHEAD..].copy_from_slice(plaintext);
-
-        let cipher = Cipher::new(&key);
-
-        let aad: Option<[u8; 32]> = Some([0u8; 32]);
-        cipher.encrypt(&mut buf, &aad).unwrap();
-
-        // nonce is copied
-        assert_ne!(&buf[..NONCE_LEN], [0u8; 12]);
-
-        // tag is copied
-        assert_ne!(&buf[NONCE_LEN..OVERHEAD], [0_u8; 12]);
-
-        // ciphertext is not the same as plaintext
-        assert_ne!(&buf[OVERHEAD..], *b"Hello world!");
+    fn test_iv_new() {
+        let iv = IV::new();
+        let buf = iv.0;
+        assert_eq!(buf[IV_SIZE..].len(), 4);
+        buf[IV_SIZE..]
+            .iter()
+            .for_each(|&byte| assert_eq!(byte, 0u8))
     }
 
     #[test]
-    fn test_decrypt() {
-        let plaintext = "Hello world!".as_bytes();
+    fn test_iv_bytes() {
+        let bytes = IV::new();
+        let bytes = bytes.iv_bytes();
+        assert_eq!(bytes.len(), IV_SIZE);
 
-        // some random key bytes
-        let key: [u8; 32] = [
-            0x2f, 0x3a, 0x0b, 0x9c, 0x8e, 0x6d, 0x7f, 0x5a, 0x01, 0xf4, 0x63, 0x21, 0x8b, 0x4c,
-            0xef, 0xd2, 0x7d, 0xa8, 0x0e, 0x5b, 0xc7, 0x90, 0x6f, 0x58, 0xb2, 0x35, 0x49, 0x77,
-            0xa2, 0xe9, 0xd1, 0x80,
-        ];
-
-        let mut buf = make_buffer(plaintext.len() + OVERHEAD);
-        buf[OVERHEAD..].copy_from_slice(plaintext);
-
-        let cipher = Cipher::new(&key);
-
-        let aad: Option<[u8; 32]> = Some([0_u8; 32]);
-        cipher.encrypt(&mut buf, &aad).unwrap();
-
-        cipher.decrypt(&mut buf, &aad).unwrap();
-        assert_eq!(&buf[OVERHEAD..], plaintext);
+        let bytes2 = IV::new();
+        let bytes2 = bytes2.iv_bytes();
+        assert_ne!(bytes, bytes2);
     }
 
     #[test]
-    fn test_encrypt_decrypt_no_aad() {
-        let plaintext = "Hello world!".as_bytes();
+    fn test_iv_inc_counter() {
+        let mut iv = IV::new();
+        for ele in iv.0[IV_SIZE..].iter() {
+            assert_eq!(*ele, 0);
+        }
 
-        // some random key bytes
-        let key: [u8; 32] = [
-            0x2f, 0x3a, 0x0b, 0x9c, 0x8e, 0x6d, 0x7f, 0x5a, 0x01, 0xf4, 0x63, 0x21, 0x8b, 0x4c,
-            0xef, 0xd2, 0x7d, 0xa8, 0x0e, 0x5b, 0xc7, 0x90, 0x6f, 0x58, 0xb2, 0x35, 0x49, 0x77,
-            0xa2, 0xe9, 0xd1, 0x80,
-        ];
+        iv.inc_counter();
+        assert_eq!(iv.0[BLOCK_SIZE - 1], 1);
 
-        let mut buf = make_buffer(plaintext.len() + OVERHEAD);
-        buf[OVERHEAD..].copy_from_slice(plaintext);
+        iv.inc_counter();
+        assert_eq!(iv.0[BLOCK_SIZE - 1], 2);
 
-        let cipher = Cipher::new(&key);
+        // bit wrapping
+        iv.0[BLOCK_SIZE - 1] = 255;
+        iv.inc_counter();
+        assert_eq!(iv.0[BLOCK_SIZE - 1], 0);
+        assert_eq!(iv.0[BLOCK_SIZE - 2], 1);
 
-        cipher.encrypt(&mut buf, &None).unwrap();
+        // at max counter, wraps back to 0
+        for ele in iv.0[IV_SIZE..].iter_mut() {
+            *ele = 255;
+        }
 
-        cipher.decrypt(&mut buf, &None).unwrap();
-        assert_eq!(&buf[OVERHEAD..], plaintext);
+        iv.inc_counter();
+        for ele in iv.0[IV_SIZE..].iter() {
+            assert_eq!(*ele, 0);
+        }
     }
 }
