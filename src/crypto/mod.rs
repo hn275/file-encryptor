@@ -1,2 +1,2 @@
+pub mod aesgcm;
 pub mod cipher;
-pub mod encoding;
