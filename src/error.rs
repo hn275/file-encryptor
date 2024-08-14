@@ -9,6 +9,16 @@ pub enum Error {
     Other(String),
 }
 
+impl Error {
+    pub fn status_code(&self) -> u8 {
+        match self {
+            Self::Other(_) => 1,
+            Self::IO(_) => 2,
+            Self::Key => 3,
+        }
+    }
+}
+
 impl error::Error for Error {}
 
 unsafe impl Send for Error {}
@@ -17,7 +27,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::IO(msg) => write!(f, "{}", msg),
-            Self::Key => write!(f, "Invalid key."),
+            Self::Key => write!(f, "Invalid key"),
             Self::Other(msg) => write!(f, "{}", msg),
         }
     }
@@ -25,11 +35,7 @@ impl fmt::Display for Error {
 
 impl process::Termination for Error {
     fn report(self) -> process::ExitCode {
-        match self {
-            Self::Other(_) => process::ExitCode::from(1),
-            Self::IO(_) => process::ExitCode::from(2),
-            Self::Key => process::ExitCode::from(3),
-        }
+        self.status_code().into()
     }
 }
 

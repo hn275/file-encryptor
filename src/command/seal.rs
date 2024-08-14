@@ -25,20 +25,19 @@ impl Command for Encryptor {
     fn handle(&self) -> error::Result<()> {
         // reads in key
         let mut key_file = OpenOptions::new().read(true).open(&self.key)?;
-        if key_file.metadata()?.len() != cipher::BLOCK_SIZE as u64 {
+        if key_file.metadata()?.len() != cipher::KEY_SIZE as u64 {
             return Err(error::Error::Key);
         }
 
         let mut key = cipher::Key::default();
-        if key_file.read(&mut key)? != cipher::BLOCK_SIZE {
-            return Err(error::Error::IO(format!(
-                "Failed to read in key from {}",
-                self.key
-            )));
-        }
+        key_file.read_exact(&mut key)?;
 
         let mut inputfile = fs::OpenOptions::new().read(true).open(&self.input_file)?;
-        let mut outputfile = fs::OpenOptions::new().read(true).open(&self.output_file)?;
+        let mut outputfile = fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&self.output_file)?;
 
         // iv
         let iv = cipher::IV::new();
