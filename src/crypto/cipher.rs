@@ -49,11 +49,15 @@ impl<'a> Cipher<'a> {
         Self { key, iv, aad }
     }
 
-    pub fn encrypt_block_inplace(&mut self, block: &mut Block) {}
+    pub fn encrypt_block_inplace(&mut self, _block: &mut Block) {
+        self.iv.inc_counter();
+    }
 
-    pub fn decrypt_block(&mut self, block: &mut Block) {}
+    pub fn decrypt_block_inplace(&mut self, _block: &mut Block) {}
 
-    pub fn tag(&mut self) {}
+    pub fn tag(&mut self) -> Block {
+        Default::default()
+    }
 }
 
 #[cfg(test)]

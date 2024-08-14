@@ -40,15 +40,38 @@ impl Command for Encryptor {
         let mut inputfile = fs::OpenOptions::new().read(true).open(&self.input_file)?;
         let mut outputfile = fs::OpenOptions::new().read(true).open(&self.output_file)?;
 
+        // iv
         let iv = cipher::IV::new();
-        outputfile.write(iv.iv_bytes())?;
+        outputfile.write_all(iv.iv_bytes())?;
 
-        let aad = match &self.aad {
+        // aad
+        let aad: Option<&[u8]> = match &self.aad {
             None => None,
             Some(aad) => Some(aad.as_bytes()),
         };
 
-        let cipher = cipher::Cipher::new(key, iv, aad);
+        let mut cipher = cipher::Cipher::new(key, iv, aad);
+
+        let mut eof = false;
+        loop {
+            let mut buf = cipher::Block::default();
+            let bytes_read = inputfile.read(&mut buf)?;
+            if bytes_read != cipher::BLOCK_SIZE {
+                // add pkcs7 padding here
+                eof = true;
+            }
+
+            // cipher block
+            cipher.encrypt_block_inplace(&mut buf);
+            outputfile.write_all(&buf)?;
+
+            if eof {
+                break;
+            }
+        }
+
+        let tag = cipher.tag();
+        outputfile.write_all(&tag)?;
 
         Ok(())
     }
