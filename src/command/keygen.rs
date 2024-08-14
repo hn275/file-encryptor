@@ -1,29 +1,32 @@
-use crate::{crypto::cipher, error, Command};
+use crate::{
+    crypto::cipher::{self, KEY_SIZE},
+    error, Command,
+};
 use clap::Parser;
-use crypto::scrypt;
+use scrypt;
 use std::{
     io::{self, Read, Write},
     sync::{Arc, Mutex},
 };
 
-type Key = [u8; cipher::KEY_LEN];
+type Key = [u8; cipher::KEY_SIZE];
 
 struct Engine {
-    scrypt: scrypt::ScryptParams,
+    scrypt: scrypt::Params,
     key_buf: Key,
 }
 
 impl Engine {
     pub fn new() -> Self {
         // https://tobtu.com/minimum-password-settings/
-        let scrypt = scrypt::ScryptParams::new(16, 8, 2);
+        let scrypt = scrypt::Params::new(16, 8, 2, KEY_SIZE).expect("invalid param for scrypt");
         let key_buf: Key = Default::default();
         Engine { scrypt, key_buf }
     }
 
     pub fn update(&mut self, password: &[u8]) {
         let mut sub_key: Key = Default::default();
-        scrypt::scrypt(password, &[], &self.scrypt, &mut sub_key);
+        scrypt::scrypt(password, &[], &self.scrypt, &mut sub_key).expect("invalid sub_key length");
         Self::xor_key(&mut self.key_buf, &sub_key);
     }
 
@@ -32,7 +35,7 @@ impl Engine {
     }
 
     fn xor_key(key_buf: &mut Key, sub_key: &Key) {
-        for i in 0..cipher::KEY_LEN {
+        for i in 0..cipher::BLOCK_SIZE {
             key_buf[i] ^= sub_key[i];
         }
     }
