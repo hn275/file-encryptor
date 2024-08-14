@@ -7,6 +7,7 @@ mod command;
 mod crypto;
 mod error;
 
+
 fn main() -> error::Result<()> {
     let cmd = command::Cli::parse();
 
@@ -17,7 +18,7 @@ fn main() -> error::Result<()> {
     };
 
     if let Err(err) = &result {
-        eprintln!("{}", err.to_string());
+        eprintln!("{}", err);
         process::exit(err.status_code().into());
     }
 
