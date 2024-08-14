@@ -1,51 +1,55 @@
-use crate::error;
+use crate::{crypto::cipher, error};
 use clap::Parser;
 use std::{
-    fs,
-    io::{self, Read, Write},
-    path,
+    fs::{self, OpenOptions},
+    io::{Read, Write},
 };
 
 use super::Command;
-use crate::crypto::{self, cipher::OVERHEAD, encoding};
 
 #[derive(Parser, Debug, Clone)]
 pub struct Encryptor {
-    /// input file
     input_file: String,
+    output_file: String,
 
     /// (optional) additional authenticated data
     #[arg(short, long)]
     aad: Option<String>,
+
+    /// File containing the 32 byte key
+    #[arg(short, long)]
+    key: String,
 }
 
 impl Command for Encryptor {
     fn handle(&self) -> error::Result<()> {
-        let mut key: [u8; 32] = [0; 32];
-        io::stdin().lock().read_exact(&mut key)?;
+        // reads in key
+        let mut key_file = OpenOptions::new().read(true).open(&self.key)?;
+        if key_file.metadata()?.len() != cipher::BLOCK_SIZE as u64 {
+            return Err(error::Error::Key);
+        }
 
-        let file_len: usize = path::Path::new(&self.input_file)
-            .metadata()?
-            .len()
-            .try_into()
-            .expect("failed to convert u64 to usize");
+        let mut key = cipher::Key::default();
+        if key_file.read(&mut key)? != cipher::BLOCK_SIZE {
+            return Err(error::Error::IO(format!(
+                "Failed to read in key from {}",
+                self.key
+            )));
+        }
 
-        let mut file_buf = crypto::cipher::make_buffer(file_len + crypto::cipher::OVERHEAD);
-        fs::OpenOptions::new()
-            .read(true)
-            .open(&self.input_file)?
-            .read_exact(&mut file_buf[OVERHEAD..])?;
+        let mut inputfile = fs::OpenOptions::new().read(true).open(&self.input_file)?;
+        let mut outputfile = fs::OpenOptions::new().read(true).open(&self.output_file)?;
+
+        let iv = cipher::IV::new();
+        outputfile.write(iv.iv_bytes())?;
 
         let aad = match &self.aad {
             None => None,
-            Some(aad) => {
-                let mut buf: [u8; 32] = [0; 32];
-                encoding::sha256::encode(&mut buf, aad.as_bytes());
-                Some(buf)
-            }
+            Some(aad) => Some(aad.as_bytes()),
         };
 
-        crypto::cipher::Cipher::new(&key).encrypt(&mut file_buf, &aad)?;
-        Ok(io::stdout().lock().write_all(&file_buf)?)
+        let cipher = cipher::Cipher::new(key, iv, aad);
+
+        Ok(())
     }
 }
