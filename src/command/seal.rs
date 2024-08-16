@@ -8,7 +8,7 @@ use std::{
     io::{Read, Write},
 };
 
-use super::Command;
+use super::Exec;
 
 #[derive(Parser, Debug, Clone)]
 pub struct Encryptor {
@@ -24,7 +24,7 @@ pub struct Encryptor {
     key: String,
 }
 
-impl Command for Encryptor {
+impl Exec for Encryptor {
     fn handle(&self) -> error::Result<()> {
         // reads in key
         let mut key_file = OpenOptions::new().read(true).open(&self.key)?;

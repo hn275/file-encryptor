@@ -1,6 +1,6 @@
 use crate::{
     crypto::cipher::{self, KEY_SIZE},
-    error, Command,
+    error, Exec,
 };
 use clap::Parser;
 use scrypt;
@@ -48,7 +48,7 @@ pub struct KeyGen {
     password: Option<String>,
 }
 
-impl Command for KeyGen {
+impl Exec for KeyGen {
     fn handle(&self) -> error::Result<()> {
         let keygen = Arc::new(Mutex::new(Engine::new()));
 

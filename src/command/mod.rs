@@ -10,11 +10,11 @@ pub mod seal;
 pub struct Cli {
     /// Action to perform on the input file
     #[command(subcommand)]
-    pub action: Action,
+    pub cmd: Command,
 }
 
 #[derive(Subcommand, Clone, Debug)]
-pub enum Action {
+pub enum Command {
     /// generate a key, from pure random bytes, or from an input password.
     Keygen(keygen::KeyGen),
 
@@ -25,6 +25,6 @@ pub enum Action {
     Seal(seal::Encryptor),
 }
 
-pub trait Command {
+pub trait Exec {
     fn handle(&self) -> error::Result<()>;
 }

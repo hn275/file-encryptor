@@ -1,5 +1,5 @@
 use clap::Parser;
-use crate::{error, Command};
+use crate::{error, Exec};
 
 #[derive(Parser, Debug, Clone)]
 pub struct Decryptor {
@@ -11,7 +11,7 @@ pub struct Decryptor {
     aad: Option<String>,
 }
 
-impl Command for Decryptor {
+impl Exec for Decryptor {
     fn handle(&self) -> error::Result<()> {
         Ok(())
     }
