@@ -1,11 +1,10 @@
 use std::process;
 
 use clap::Parser;
-use command::Exec;
-
-mod command;
-mod crypto;
-mod error;
+use file_encryptor::{
+    command::{self, Exec},
+    error,
+};
 
 fn main() -> error::Result<()> {
     let cmd = command::Cli::parse();

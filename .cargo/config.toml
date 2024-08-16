@@ -1,2 +1,2 @@
 [alias]
-seal = "run -- seal -k test-output-key.key LICENSE test-output-cipher.ciphertext"
+seal = "run --bin file-encryptor -- seal -k test-output-key.key LICENSE test-output-cipher.ciphertext"

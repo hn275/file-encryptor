@@ -1,6 +1,6 @@
 use crate::{
     crypto::cipher::{self, KEY_SIZE},
-    error, Exec,
+    error, command::Exec,
 };
 use clap::Parser;
 use scrypt;

@@ -1,5 +1,5 @@
+use crate::{command::Exec, error};
 use clap::Parser;
-use crate::{error, Exec};
 
 #[derive(Parser, Debug, Clone)]
 pub struct Decryptor {
