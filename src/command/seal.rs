@@ -1,4 +1,7 @@
-use crate::{crypto::cipher, error};
+use crate::{
+    crypto::{self, cipher},
+    error,
+};
 use clap::Parser;
 use std::{
     fs::{self, OpenOptions},
@@ -56,7 +59,7 @@ impl Command for Encryptor {
             let mut buf = cipher::Block::default();
             let bytes_read = inputfile.read(&mut buf)?;
             if bytes_read != cipher::BLOCK_SIZE {
-                // add pkcs7 padding here
+                crypto::pkcs7::pad(&mut buf, bytes_read);
                 eof = true;
             }
 
