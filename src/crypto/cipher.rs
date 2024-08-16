@@ -2,6 +2,10 @@ use aes::{
     cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit},
     Aes256,
 };
+use num::{
+    traits::{ConstZero, FromBytes},
+    BigUint, FromPrimitive,
+};
 
 pub const IV_SIZE: usize = 12;
 pub const BLOCK_SIZE: usize = 16;
@@ -55,23 +59,32 @@ impl IV {
 pub struct Cipher<'a> {
     aes: Aes256,
     iv: IV,
-    aad: Option<&'a [u8]>,
     counter0: Block,
+    tag: Tag,
 }
 
 impl<'a> Cipher<'a> {
     pub fn new(key: Key, iv: IV, aad: Option<&'a [u8]>) -> Self {
         let aes = Aes256::new(&key.into());
 
-        let mut counter0 = Block::default();
+        let mut counter0 = iv.0.clone();
         let buf = GenericArray::from_mut_slice(&mut counter0);
         aes.encrypt_block(buf);
+
+        let mut h = Block::default();
+        aes.encrypt_block(GenericArray::from_mut_slice(&mut h));
+
+        let aad = match aad {
+            None => Vec::new(),
+            Some(data) => data.to_vec(),
+        };
+        let tag = Tag::new(counter0, h, aad);
 
         Self {
             aes,
             iv,
-            aad,
             counter0,
+            tag,
         }
     }
 
@@ -102,6 +115,91 @@ impl<'a> Cipher<'a> {
         for i in 0..BLOCK_SIZE {
             left[i] ^= right[i]
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct Tag {
+    counter_0: Block,
+    h: BigUint,
+    tag: BigUint,
+    reduction_poly: BigUint,
+    msb_mask: BigUint,
+}
+
+impl Tag {
+    fn new(counter_0: Block, h: Block, auth_data: Vec<u8>) -> Self {
+        let reduction_poly: BigUint = BigUint::from_u64(0b1110_0001).unwrap() << 120;
+
+        let msb_mask: BigUint =
+            num::BigUint::from_u8(0b1000_0000).expect("invalid value for BigUint") << 120;
+
+        let h = BigUint::from_bytes_be(&h);
+
+        // compute tag with aad
+        let mut tag = BigUint::from_bytes_be(&Block::default());
+
+        let auth_data = auth_data.unwrap_or_default();
+        let mut auth_data = auth_data.as_slice();
+
+        let mut eof = false;
+        let mut block = Block::default();
+        while !eof {
+            let aad_block = if auth_data.len() != BLOCK_SIZE {
+                block = Block::default();
+                block.copy_from_slice(auth_data.as_ref());
+                eof = true;
+                BigUint::from_bytes_be(&block)
+            } else {
+                block.copy_from_slice(auth_data[..BLOCK_SIZE].as_ref());
+                BigUint::from_bytes_be(&block)
+            };
+
+            tag ^= &aad_block;
+            tag = Self::galois(&tag, &h, &reduction_poly, &msb_mask);
+
+            if eof {
+                break;
+            }
+
+            auth_data = &auth_data[BLOCK_SIZE..];
+        }
+
+        Tag {
+            counter_0,
+            h,
+            tag,
+            reduction_poly,
+            msb_mask,
+        }
+    }
+
+    fn galois(
+        x: &BigUint,
+        y: &BigUint,
+        reduction_poly: &BigUint,
+        msb_mask: &BigUint,
+    ) -> num::BigUint {
+        let mut z = num::BigUint::from_bytes_be(&Block::default());
+        let mut v = x.clone();
+
+        let mut maskbin = num::BigUint::from_u8(1).expect("invalid value for BigUint");
+
+        for _ in 0..127 {
+            if y & &maskbin != num::BigUint::ZERO {
+                z ^= y;
+            }
+
+            let msb_set = &v & msb_mask != num::BigUint::ZERO;
+            v <<= 1;
+            if msb_set {
+                v ^= reduction_poly;
+            }
+
+            maskbin <<= 1;
+        }
+
+        z
     }
 }
 

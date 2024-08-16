@@ -16,3 +16,4 @@ rand = { version = "0.8.5", features = ["default"] }
 
 # for testing
 aes-gcm = { version = "0.10.3", features = ["aes", "getrandom"] }
+num = { version = "0.4.3", features = ["std"] }
