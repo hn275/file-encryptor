@@ -1,6 +1,7 @@
 use crate::{
-    crypto::cipher::{self, KEY_SIZE},
-    error, command::Exec,
+    command::Exec,
+    crypto::{BLOCK_SIZE, KEY_SIZE},
+    error,
 };
 use clap::Parser;
 use scrypt;
@@ -9,7 +10,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-type Key = [u8; cipher::KEY_SIZE];
+type Key = [u8; KEY_SIZE];
 
 struct Engine {
     scrypt: scrypt::Params,
@@ -35,7 +36,7 @@ impl Engine {
     }
 
     fn xor_key(key_buf: &mut Key, sub_key: &Key) {
-        for i in 0..cipher::BLOCK_SIZE {
+        for i in 0..BLOCK_SIZE {
             key_buf[i] ^= sub_key[i];
         }
     }

@@ -1,5 +1,5 @@
 use crate::{
-    crypto::{self, cipher},
+    crypto::{self, block::Block, cipher, Key, BLOCK_SIZE, KEY_SIZE},
     error,
 };
 use clap::Parser;
@@ -28,11 +28,11 @@ impl Exec for Encryptor {
     fn handle(&self) -> error::Result<()> {
         // reads in key
         let mut key_file = OpenOptions::new().read(true).open(&self.key)?;
-        if key_file.metadata()?.len() != cipher::KEY_SIZE as u64 {
+        if key_file.metadata()?.len() != KEY_SIZE as u64 {
             return Err(error::Error::Key);
         }
 
-        let mut key = cipher::Key::default();
+        let mut key = Key::default();
         key_file.read_exact(&mut key)?;
 
         let mut inputfile = fs::OpenOptions::new().read(true).open(&self.input_file)?;
@@ -43,29 +43,29 @@ impl Exec for Encryptor {
             .open(&self.output_file)?;
 
         // iv
-        let iv = cipher::Block::new_iv();
+        let iv = Block::new_iv();
         outputfile.write_all(iv.iv_bytes())?;
 
         let mut cipher = cipher::Cipher::new(key, iv, &self.aad);
 
         let mut eof = false;
         loop {
-            let mut buf = cipher::Block::default();
-            let bytes_read = inputfile.read(&mut buf.0)?;
-            if bytes_read != cipher::BLOCK_SIZE {
+            let mut buf = Block::default();
+            let bytes_read = inputfile.read(buf.bytes_mut())?;
+            if bytes_read != BLOCK_SIZE {
                 crypto::pkcs7::pad(&mut buf, bytes_read);
                 eof = true;
             }
 
             // cipher block
             cipher.encrypt_block_inplace(&mut buf, bytes_read);
-            outputfile.write_all(&buf.0)?;
+            outputfile.write_all(buf.bytes())?;
 
             if eof {
                 break;
             }
         }
 
-        Ok(outputfile.write_all(&cipher.tag().0)?)
+        Ok(outputfile.write_all(cipher.tag().bytes())?)
     }
 }
