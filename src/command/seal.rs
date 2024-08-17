@@ -46,13 +46,7 @@ impl Exec for Encryptor {
         let iv = cipher::IV::new();
         outputfile.write_all(iv.iv_bytes())?;
 
-        // aad
-        let aad: Option<&[u8]> = match &self.aad {
-            None => None,
-            Some(aad) => Some(aad.as_bytes()),
-        };
-
-        let mut cipher = cipher::Cipher::new(key, iv, aad);
+        let mut cipher = cipher::Cipher::new(key, iv, &self.aad);
 
         let mut eof = false;
         loop {
@@ -64,7 +58,7 @@ impl Exec for Encryptor {
             }
 
             // cipher block
-            cipher.encrypt_block_inplace(&mut buf);
+            cipher.encrypt_block_inplace(&mut buf, bytes_read);
             outputfile.write_all(&buf)?;
 
             if eof {
@@ -72,9 +66,6 @@ impl Exec for Encryptor {
             }
         }
 
-        let tag = cipher.tag();
-        outputfile.write_all(&tag)?;
-
-        Ok(())
+        Ok(outputfile.write_all(&cipher.tag())?)
     }
 }

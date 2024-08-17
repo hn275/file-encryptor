@@ -2,10 +2,7 @@ use aes::{
     cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit},
     Aes256,
 };
-use num::{
-    traits::{ConstZero, FromBytes},
-    BigUint, FromPrimitive,
-};
+use num::{traits::ToBytes, BigUint, FromPrimitive};
 
 pub const IV_SIZE: usize = 12;
 pub const BLOCK_SIZE: usize = 16;
@@ -56,15 +53,17 @@ impl IV {
 
 #[derive(Clone)]
 #[allow(dead_code)]
-pub struct Cipher<'a> {
+pub struct Cipher {
+    payload_len: usize,
+    aad_len: usize,
     aes: Aes256,
     iv: IV,
     counter0: Block,
     tag: Tag,
 }
 
-impl<'a> Cipher<'a> {
-    pub fn new(key: Key, iv: IV, aad: Option<&'a [u8]>) -> Self {
+impl Cipher {
+    pub fn new(key: Key, iv: IV, aad: &Option<String>) -> Self {
         let aes = Aes256::new(&key.into());
 
         let mut counter0 = iv.0.clone();
@@ -74,13 +73,17 @@ impl<'a> Cipher<'a> {
         let mut h = Block::default();
         aes.encrypt_block(GenericArray::from_mut_slice(&mut h));
 
-        let aad = match aad {
-            None => Vec::new(),
-            Some(data) => data.to_vec(),
-        };
-        let tag = Tag::new(counter0, h, aad);
+        let mut tag = Tag::new(counter0, h);
+        if let Some(aad) = aad {
+            tag.with_aad(aad.as_bytes());
+        }
+
+        let aad_len = if let Some(aad) = aad { aad.len() } else { 0 };
+        let payload_len = 0;
 
         Self {
+            payload_len,
+            aad_len,
             aes,
             iv,
             counter0,
@@ -88,17 +91,20 @@ impl<'a> Cipher<'a> {
         }
     }
 
-    pub fn encrypt_block_inplace(&mut self, block: &mut Block) {
+    pub fn encrypt_block_inplace(&mut self, block: &mut Block, size: usize) {
+        self.payload_len += size;
         self.iv.inc_counter();
-        let mut ctr = GenericArray::from(self.iv.0);
-        self.aes.encrypt_block(&mut ctr);
-        Self::xor(block, ctr.as_ref());
-        self.galois_mult(block);
+        let mut ctr = self.iv.0.clone();
+        self.aes
+            .encrypt_block(GenericArray::from_mut_slice(&mut ctr));
+        Self::xor(block, &ctr);
+        self.tag.compute(block);
     }
 
     #[allow(dead_code)]
     pub fn decrypt_block_inplace(&mut self, block: &mut Block) {
-        self.galois_mult(block);
+        // self.payload_len += size as u64;
+        self.tag.compute(block);
         self.iv.inc_counter();
         let mut ctr = GenericArray::from(self.iv.0);
         self.aes.encrypt_block(&mut ctr);
@@ -106,10 +112,18 @@ impl<'a> Cipher<'a> {
     }
 
     pub fn tag(&mut self) -> Block {
-        Default::default()
-    }
+        let mut buf = Block::default();
+        buf[..8].copy_from_slice(&self.payload_len.to_be_bytes());
+        buf[8..].copy_from_slice(&self.aad_len.to_be_bytes());
+        Self::xor(&mut buf, &self.tag.block());
 
-    fn galois_mult(&mut self, _block: &Block) {}
+        self.tag.compute(&buf);
+
+        buf = self.tag.block();
+        Self::xor(&mut buf, &self.tag.counter_0);
+
+        buf
+    }
 
     fn xor(left: &mut Block, right: &Block) {
         for i in 0..BLOCK_SIZE {
@@ -128,20 +142,25 @@ pub struct Tag {
 }
 
 impl Tag {
-    fn new(counter_0: Block, h: Block, auth_data: Vec<u8>) -> Self {
+    fn new(counter_0: Block, h: Block) -> Self {
         let reduction_poly: BigUint = BigUint::from_u64(0b1110_0001).unwrap() << 120;
 
         let msb_mask: BigUint =
             num::BigUint::from_u8(0b1000_0000).expect("invalid value for BigUint") << 120;
 
         let h = BigUint::from_bytes_be(&h);
+        let tag = BigUint::from_bytes_be(&Block::default());
 
-        // compute tag with aad
-        let mut tag = BigUint::from_bytes_be(&Block::default());
+        Self {
+            counter_0,
+            h,
+            tag,
+            reduction_poly,
+            msb_mask,
+        }
+    }
 
-        let auth_data = auth_data.unwrap_or_default();
-        let mut auth_data = auth_data.as_slice();
-
+    fn with_aad(&mut self, mut auth_data: &[u8]) {
         let mut eof = false;
         let mut block = Block::default();
         while !eof {
@@ -155,8 +174,8 @@ impl Tag {
                 BigUint::from_bytes_be(&block)
             };
 
-            tag ^= &aad_block;
-            tag = Self::galois(&tag, &h, &reduction_poly, &msb_mask);
+            self.tag ^= &aad_block;
+            self.tag = self.galois_multiply(&self.tag, &self.h);
 
             if eof {
                 break;
@@ -164,36 +183,37 @@ impl Tag {
 
             auth_data = &auth_data[BLOCK_SIZE..];
         }
-
-        Tag {
-            counter_0,
-            h,
-            tag,
-            reduction_poly,
-            msb_mask,
-        }
     }
 
-    fn galois(
-        x: &BigUint,
-        y: &BigUint,
-        reduction_poly: &BigUint,
-        msb_mask: &BigUint,
-    ) -> num::BigUint {
+    fn block(&self) -> Block {
+        let mut block = Block::default();
+        dbg!(&self.tag.to_be_bytes());
+        block.copy_from_slice(&self.tag.to_bytes_be());
+        block
+    }
+
+    fn compute(&mut self, block: &Block) {
+        self.tag ^= BigUint::from_bytes_be(block);
+        self.tag = self.galois_multiply(&self.tag, &self.h);
+        println!("tag: {}", self.tag)
+    }
+
+    fn galois_multiply(&self, x: &BigUint, y: &BigUint) -> num::BigUint {
         let mut z = num::BigUint::from_bytes_be(&Block::default());
         let mut v = x.clone();
 
         let mut maskbin = num::BigUint::from_u8(1).expect("invalid value for BigUint");
 
-        for _ in 0..127 {
-            if y & &maskbin != num::BigUint::ZERO {
+        for _ in 0..128 {
+            let bitset = y & &maskbin != num::BigUint::ZERO;
+            if bitset {
                 z ^= y;
             }
 
-            let msb_set = &v & msb_mask != num::BigUint::ZERO;
+            let msb_set = &v & &self.msb_mask != num::BigUint::ZERO;
             v <<= 1;
             if msb_set {
-                v ^= reduction_poly;
+                v ^= &self.reduction_poly;
             }
 
             maskbin <<= 1;
@@ -272,7 +292,7 @@ mod tests {
 
         let iv = IV::from(&iv);
 
-        let mut cipher = Cipher::new(key, iv, None);
+        let mut cipher = Cipher::new(key, iv, &None);
 
         let plaintext: Block = [
             0x5A, 0x37, 0x71, 0x50, 0x39, 0x6B, 0x54, 0x62, 0x58, 0x31, 0x4C, 0x72, 0x34, 0x57,
@@ -286,7 +306,7 @@ mod tests {
 
         let mut block = plaintext;
 
-        cipher.encrypt_block_inplace(&mut block);
+        cipher.encrypt_block_inplace(&mut block, BLOCK_SIZE);
 
         assert_ne!(block, ciphertext);
     }
@@ -304,7 +324,7 @@ mod tests {
         ];
 
         let iv = IV::from(&iv);
-        let mut cipher = Cipher::new(key, iv, None);
+        let mut cipher = Cipher::new(key, iv, &None);
         let mut cipher2 = cipher.clone();
 
         let plaintext: Block = [
@@ -314,7 +334,7 @@ mod tests {
 
         let mut block = plaintext;
 
-        cipher.encrypt_block_inplace(&mut block);
+        cipher.encrypt_block_inplace(&mut block, BLOCK_SIZE);
         cipher2.decrypt_block_inplace(&mut block);
 
         assert_eq!(block, plaintext);
