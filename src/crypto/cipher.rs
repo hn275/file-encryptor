@@ -20,7 +20,7 @@ impl Cipher {
     pub fn new(key: Key, iv: Block, aad: &Option<String>) -> Self {
         let aes = Aes256::new(&key.into());
 
-        let mut counter0 = iv.clone();
+        let mut counter0 = iv;
         aes.encrypt_block(GenericArray::from_mut_slice(counter0.bytes_mut()));
 
         let mut h = Block::default();
@@ -48,7 +48,7 @@ impl Cipher {
         self.payload_len += size;
         self.iv.inc_counter();
 
-        let mut ctr = self.iv.clone();
+        let mut ctr = self.iv;
         self.encrypt_block(&mut ctr);
 
         block.xor(&ctr);
@@ -61,7 +61,7 @@ impl Cipher {
         // self.payload_len += size as u64;
         self.tag.compute(block);
         self.iv.inc_counter();
-        let mut ctr = self.iv.clone();
+        let mut ctr = self.iv;
         self.aes.encrypt_block((&mut ctr).into());
         block.xor(&ctr);
     }
@@ -129,7 +129,7 @@ impl Tag {
                 block
                     .bytes_mut()
                     .copy_from_slice(auth_data[..BLOCK_SIZE].as_ref());
-                BigUint::from(&block.into())
+                BigUint::from(&block)
             };
 
             self.tag ^= &aad_block;

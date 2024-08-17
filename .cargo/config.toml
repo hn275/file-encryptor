@@ -1,2 +1,3 @@
 [alias]
 seal = "run --bin file-encryptor -- seal -k test-output-key.key test-input.txt test-output-cipher.ciphertext"
+lint = "clippy --all-features --all-targets"

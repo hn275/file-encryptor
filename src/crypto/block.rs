@@ -3,7 +3,7 @@ use num::BigUint;
 
 use crate::crypto::{BLOCK_SIZE, IV_SIZE};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Block([u8; BLOCK_SIZE]);
 
 impl<'a> From<&'a mut Block> for &'a mut GenericArray<u8, U16> {
@@ -36,12 +36,6 @@ impl From<[u8; IV_SIZE]> for Block {
         let mut buf = [0_u8; BLOCK_SIZE];
         buf[..IV_SIZE].copy_from_slice(iv.as_ref());
         Self(buf)
-    }
-}
-
-impl Default for Block {
-    fn default() -> Self {
-        Block(Default::default())
     }
 }
 
@@ -146,8 +140,8 @@ mod tests {
         ];
 
         bytes.bin_shift_left();
-        for i in 0..BLOCK_SIZE {
-            assert_eq!(bytes.0[i], expected[i]);
+        for (i, byte) in expected.iter().enumerate() {
+            assert_eq!(bytes.0[i], *byte);
         }
     }
 
@@ -166,7 +160,7 @@ mod tests {
             .iter_mut()
             .for_each(|byte| *byte = rng.gen());
 
-        let mut data = left.clone();
+        let mut data = left;
         data.xor(&right);
         for i in 0..BLOCK_SIZE {
             let expected = left.0[i] ^ right.0[i];
