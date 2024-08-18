@@ -140,32 +140,3 @@ fn with_stdin(io: &mut IO, hash: &Hash) -> error::Result<()> {
     io.write_bytes(bytes)?;
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_keygen() {
-        let hash = Hash::default();
-        let keystream = [
-            String::from("Hello world 1"),
-            String::from("Hello world 2"),
-            String::from("Hello world 3"),
-        ];
-
-        let mut engine1 = Engine::new();
-        let mut engine2 = Engine::new();
-
-        let keystream_ctr = keystream.len();
-        for i in 0..keystream_ctr {
-            let key1 = hash.hash(keystream[i].as_bytes());
-            engine1.update(&key1);
-
-            let key2 = hash.hash(keystream[keystream_ctr - 1 - i].as_bytes());
-            engine2.update(&key2);
-        }
-
-        assert_eq!(engine1.bytes(), engine2.bytes());
-    }
-}

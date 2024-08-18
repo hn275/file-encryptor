@@ -38,32 +38,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pad() {
+    fn pkcs7_pad() {
         let mut block = Block::default();
-        super::pad(&mut block, 3);
+        pad(&mut block, 3);
         for i in 3..16 {
             assert_eq!(block.bytes()[i], 13);
         }
 
         let mut block = Block::default();
-        super::pad(&mut block, 0);
+        pad(&mut block, 0);
         for i in 0..16 {
             assert_eq!(block.bytes()[i], 16);
         }
     }
 
     #[test]
-    fn unpad() {
+    fn pkcs7_unpad() {
         let mut block = Block::default();
-        super::pad(&mut block, 3);
-        super::unpad(&mut block);
+        pad(&mut block, 3);
+        let padded_bytes = unpad(&mut block);
+        assert_eq!(padded_bytes, BLOCK_SIZE - 3);
         for i in 3..16 {
             assert_eq!(block.bytes()[i], 0);
         }
 
         let mut block = Block::default();
-        super::pad(&mut block, 0);
-        super::unpad(&mut block);
+        pad(&mut block, 0);
+        unpad(&mut block);
         for i in 0..16 {
             assert_eq!(block.bytes()[i], 0);
         }
