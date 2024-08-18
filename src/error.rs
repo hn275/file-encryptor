@@ -6,6 +6,7 @@ pub type Result<T> = result::Result<T, Error>;
 pub enum Error {
     IO(String),
     Key,
+    Encryption(String),
     Other(String),
 }
 
@@ -15,6 +16,7 @@ impl Error {
             Self::Other(_) => 1,
             Self::IO(_) => 2,
             Self::Key => 3,
+            Self::Encryption(_) => 4,
         }
     }
 }
@@ -29,6 +31,7 @@ impl fmt::Display for Error {
             Self::IO(msg) => write!(f, "{}", msg),
             Self::Key => write!(f, "Invalid key"),
             Self::Other(msg) => write!(f, "{}", msg),
+            Self::Encryption(msg) => write!(f, "{}", msg),
         }
     }
 }

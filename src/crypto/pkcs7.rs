@@ -9,23 +9,27 @@ pub fn pad(block: &mut Block, block_size: usize) {
     }
 }
 
-pub fn unpad(block: &mut Block) {
+pub fn unpad(block: &mut Block) -> usize {
     let block_len = BLOCK_SIZE;
 
     let bytes = block.bytes_mut();
     let last_byte = bytes[block_len - 1];
 
     // check if padding exists
+    let mut bytes_padded = 0;
     for i in 0..(last_byte as usize) {
         if bytes[block_len - 1 - i] != last_byte {
-            return;
+            return 0;
         }
+        bytes_padded += 1;
     }
 
     // remove padding
     for i in 0..(last_byte as usize) {
         bytes[block_len - 1 - i] = 0;
     }
+
+    BLOCK_SIZE - bytes_padded
 }
 
 #[cfg(test)]

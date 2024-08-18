@@ -82,4 +82,11 @@ impl IO {
             Some(fd) => fd.write(bytes),
         }
     }
+
+    pub fn next(&self) -> bool {
+        match &self.filein {
+            None => std::io::stdin().bytes().peekable().peek().is_some(),
+            Some(fd) => fd.bytes().peekable().peek().is_some(),
+        }
+    }
 }
