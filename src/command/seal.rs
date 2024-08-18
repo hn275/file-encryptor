@@ -1,57 +1,71 @@
 use crate::{
-    crypto::{self, block::Block, cipher, Key, BLOCK_SIZE, KEY_SIZE},
+    crypto::{self, block::Block, cipher, Key, BLOCK_SIZE, IV_SIZE, KEY_SIZE},
     error,
+    ioutils::IO,
 };
 use clap::Parser;
-use std::{
-    fs::{self, OpenOptions},
-    io::{Read, Write},
-};
+use std::{fs::OpenOptions, io::Read};
 
 use super::Exec;
 
 #[derive(Parser, Debug, Clone)]
 pub struct Encryptor {
-    input_file: String,
-    output_file: String,
+    /// (optional) input file, read from stdin by default
+    #[arg(short, long)]
+    input_file: Option<String>,
+
+    /// (optional) output file, write to stdout by default
+    #[arg(short, long)]
+    output_file: Option<String>,
 
     /// (optional) additional authenticated data
     #[arg(short, long)]
     aad: Option<String>,
 
-    /// File containing the 32 byte key
+    /// (optional) key file, read (the first) 32 byte from stdin by default
     #[arg(short, long)]
-    key: String,
+    key: Option<String>,
 }
 
 impl Exec for Encryptor {
     fn handle(&self) -> error::Result<()> {
-        // reads in key
-        let mut key_file = OpenOptions::new().read(true).open(&self.key)?;
-        if key_file.metadata()?.len() != KEY_SIZE as u64 {
-            return Err(error::Error::Key);
-        }
+        let mut io = IO::new(&self.input_file, &self.output_file)?;
 
-        let mut key = Key::default();
-        key_file.read_exact(&mut key)?;
+        // reads in key, if `-k` flag is passed, reads from file
+        // otherwise reads (the first) 32 bytes from stdin
+        let key = match &self.key {
+            None => {
+                let mut buf = Key::default();
+                std::io::stdin().read_exact(&mut buf).map_err(|err| {
+                    eprintln!("{}", err);
+                    error::Error::Key
+                })?;
 
-        let mut inputfile = fs::OpenOptions::new().read(true).open(&self.input_file)?;
-        let mut outputfile = fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&self.output_file)?;
+                buf
+            }
+            Some(key) => {
+                let mut key_file = OpenOptions::new().read(true).open(key)?;
+                if key_file.metadata()?.len() != KEY_SIZE as u64 {
+                    return Err(error::Error::Key);
+                }
+                let mut buf = Key::default();
+                key_file.read_exact(&mut buf)?;
+
+                buf
+            }
+        };
 
         // iv
         let iv = Block::new_iv();
-        outputfile.write_all(iv.iv_bytes())?;
+        io.write_block(&iv, IV_SIZE)?;
 
         let mut cipher = cipher::Cipher::new(key, iv, &self.aad);
 
+        // stream file/stdin
         let mut eof = false;
         loop {
             let mut buf = Block::default();
-            let bytes_read = inputfile.read(buf.bytes_mut())?;
+            let bytes_read = io.read_block(&mut buf)?;
             if bytes_read != BLOCK_SIZE {
                 crypto::pkcs7::pad(&mut buf, bytes_read);
                 eof = true;
@@ -59,13 +73,14 @@ impl Exec for Encryptor {
 
             // cipher block
             cipher.encrypt_block_inplace(&mut buf, bytes_read);
-            outputfile.write_all(buf.bytes())?;
+            io.write_block(&buf, BLOCK_SIZE)?;
 
             if eof {
                 break;
             }
         }
 
-        Ok(outputfile.write_all(cipher.tag().bytes())?)
+        io.write_block(&cipher.tag(), BLOCK_SIZE)?;
+        Ok(())
     }
 }
