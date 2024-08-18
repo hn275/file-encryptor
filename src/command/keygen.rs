@@ -1,5 +1,4 @@
 use crate::{
-    command::Exec,
     crypto::{BLOCK_SIZE, KEY_SIZE},
     error,
 };
@@ -49,8 +48,8 @@ pub struct KeyGen {
     password: Option<String>,
 }
 
-impl Exec for KeyGen {
-    fn handle(&self) -> error::Result<()> {
+impl KeyGen {
+    pub fn handle(&self) -> error::Result<()> {
         let keygen = Arc::new(Mutex::new(Engine::new()));
 
         if let Some(pw) = &self.password {

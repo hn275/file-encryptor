@@ -3,7 +3,28 @@ use std::{
     io::{Read, Write},
 };
 
+use clap::Parser;
+
 use crate::crypto::block::Block;
+
+#[derive(Parser, Debug, Clone)]
+pub struct FileArg {
+    /// (optional) input file, read from stdin by default
+    #[arg(short, long)]
+    pub input_file: Option<String>,
+
+    /// (optional) output file, write to stdout by default
+    #[arg(short, long)]
+    pub output_file: Option<String>,
+
+    /// (optional) additional authenticated data
+    #[arg(short, long)]
+    pub aad: Option<String>,
+
+    /// (optional) key file, read (the first) 32 byte from stdin by default
+    #[arg(short, long)]
+    pub key: Option<String>,
+}
 
 pub struct IO {
     filein: Option<File>,

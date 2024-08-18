@@ -1,18 +1,10 @@
-use crate::{command::Exec, error};
-use clap::Parser;
+use crate::{
+    error,
+    ioutils::{FileArg, IO},
+};
 
-#[derive(Parser, Debug, Clone)]
-pub struct Decryptor {
-    /// input file
-    input_file: String,
+pub fn open(arg: &FileArg) -> error::Result<()> {
+    let mut _io = IO::new(&arg.input_file, &arg.output_file)?;
 
-    /// (optional) additional authenticated data
-    #[arg(short, long)]
-    aad: Option<String>,
-}
-
-impl Exec for Decryptor {
-    fn handle(&self) -> error::Result<()> {
-        Ok(())
-    }
+    Ok(())
 }

@@ -1,4 +1,4 @@
-use crate::error;
+use crate::ioutils::FileArg;
 use clap::{Parser, Subcommand};
 
 pub mod keygen;
@@ -19,12 +19,8 @@ pub enum Command {
     Keygen(keygen::KeyGen),
 
     /// open an encrypted file
-    Open(open::Decryptor),
+    Open(FileArg),
 
     /// seal a plaintext file
-    Seal(seal::Encryptor),
-}
-
-pub trait Exec {
-    fn handle(&self) -> error::Result<()>;
+    Seal(FileArg),
 }
