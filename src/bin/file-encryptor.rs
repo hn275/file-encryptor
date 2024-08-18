@@ -12,7 +12,7 @@ fn main() -> error::Result<()> {
     let result = match cmd.cmd {
         Command::Open(f) => open::open(&f),
         Command::Seal(f) => seal::seal(&f),
-        Command::Keygen(k) => k.handle(),
+        Command::Keygen(k) => k.gen(),
     };
 
     if let Err(err) = &result {

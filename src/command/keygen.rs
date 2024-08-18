@@ -1,98 +1,144 @@
-use crate::{
-    crypto::{BLOCK_SIZE, KEY_SIZE},
-    error,
-};
+use crate::{crypto::KEY_SIZE, error, ioutils::IO};
 use clap::Parser;
+use rand::Rng;
 use scrypt;
-use std::{
-    io::{self, Read, Write},
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 type Key = [u8; KEY_SIZE];
+const MAX_KEY_SIZE: usize = 0xffff;
+
+struct Hash(scrypt::Params);
+
+impl Default for Hash {
+    fn default() -> Self {
+        // https://tobtu.com/minimum-password-settings/
+        Self(scrypt::Params::new(16, 8, 2, KEY_SIZE).expect("invalid param for scrypt"))
+    }
+}
+
+impl Hash {
+    fn hash(&self, payload: &[u8]) -> Key {
+        let mut key = Key::default();
+        scrypt::scrypt(payload, &[], &self.0, &mut key)
+            .expect("invalid keysize buffer, use constant `KEY_SIZE`");
+        key
+    }
+}
 
 struct Engine {
-    scrypt: scrypt::Params,
     key_buf: Key,
 }
 
 impl Engine {
     pub fn new() -> Self {
-        // https://tobtu.com/minimum-password-settings/
-        let scrypt = scrypt::Params::new(16, 8, 2, KEY_SIZE).expect("invalid param for scrypt");
         let key_buf: Key = Default::default();
-        Engine { scrypt, key_buf }
+        Engine { key_buf }
     }
 
-    pub fn update(&mut self, password: &[u8]) {
-        let mut sub_key: Key = Default::default();
-        scrypt::scrypt(password, &[], &self.scrypt, &mut sub_key).expect("invalid sub_key length");
-        Self::xor_key(&mut self.key_buf, &sub_key);
+    pub fn update(&mut self, subkey: &Key) -> &mut Self {
+        Self::xor_key(&mut self.key_buf, &subkey);
+        self
     }
 
-    pub fn bytes(&self) -> &[u8] {
-        self.key_buf.as_ref()
+    pub fn bytes(&self) -> &Key {
+        &self.key_buf
     }
 
     fn xor_key(key_buf: &mut Key, sub_key: &Key) {
-        for i in 0..BLOCK_SIZE {
+        for i in 0..KEY_SIZE {
             key_buf[i] ^= sub_key[i];
         }
     }
 }
 
+/// If no option, stdin...
 #[derive(Parser, Debug, Clone)]
 pub struct KeyGen {
-    /// password used to generate key, read from stdin if not provided
+    /// (optional) a passphrase used to generate key
     #[arg(short, long)]
     password: Option<String>,
+
+    /// Randomly generated, takes precedence over all other options
+    #[arg(short, long, default_value_t = false)]
+    rand: bool,
+
+    /// (Optional) File to read in as key, default stdin
+    #[arg(short, long)]
+    input_file: Option<String>,
+
+    /// (Optional) File to write out, default stdout
+    #[arg(short, long)]
+    output_file: Option<String>,
 }
 
 impl KeyGen {
-    pub fn handle(&self) -> error::Result<()> {
-        let keygen = Arc::new(Mutex::new(Engine::new()));
+    pub fn gen(&self) -> error::Result<()> {
+        let mut io = IO::new(&self.input_file, &self.output_file)?;
+        let hash = Hash(scrypt::Params::new(16, 8, 2, KEY_SIZE).expect("invalid param for scrypt"));
 
-        if let Some(pw) = &self.password {
-            keygen
-                .lock()
-                .expect("unable to obtain thread lock for key generation engine")
-                .update(pw.as_bytes());
+        if self.rand {
+            Ok(with_rand(&mut io, &hash)?)
+        } else if let Some(pw) = &self.password {
+            Ok(with_password(&mut io, &hash, pw)?)
         } else {
-            let scope: error::Result<()> = rayon::scope(|s| {
-                let mut stdin = io::stdin().lock();
-                const MAX_KEY_SIZE: usize = 0xffff;
+            Ok(with_stdin(&mut io, &hash)?)
+        }
+    }
+}
 
-                loop {
-                    let mut buf = [0_u8; MAX_KEY_SIZE];
-                    let bytes_read = stdin.read(&mut buf)?;
+fn with_rand(io: &mut IO, hash: &Hash) -> error::Result<()> {
+    let mut buf = [0u8; MAX_KEY_SIZE];
+    let mut rng = rand::thread_rng();
+    buf.iter_mut().for_each(|i| *i = rng.gen());
 
-                    let keygen = Arc::clone(&keygen);
-                    s.spawn(move |_| {
-                        keygen
-                            .lock()
-                            .expect("unable to obtain thread lock for key generation engine")
-                            .update(buf.as_slice());
-                    });
+    let key = hash.hash(&buf);
+    io.write_bytes(Engine::new().update(&key).bytes())?;
 
-                    if bytes_read < MAX_KEY_SIZE {
-                        break;
-                    }
-                }
+    Ok(())
+}
 
-                Ok(())
+fn with_password(io: &mut IO, hash: &Hash, pw: &String) -> error::Result<()> {
+    let key = hash.hash(pw.as_bytes());
+    io.write_bytes(Engine::new().update(&key).bytes())?;
+    Ok(())
+}
+
+fn with_stdin(io: &mut IO, hash: &Hash) -> error::Result<()> {
+    let keygen = Arc::new(Mutex::new(Engine::new()));
+    let hash = Arc::new(hash);
+
+    let scope: error::Result<()> = rayon::scope(|s| {
+        loop {
+            let mut buf = [0_u8; MAX_KEY_SIZE];
+            let bytes_read = io.read_bytes(&mut buf)?;
+
+            let keygen = Arc::clone(&keygen);
+            let hash = Arc::clone(&hash);
+            s.spawn(move |_| {
+                let subkey = hash.hash(&buf);
+                keygen
+                    .lock()
+                    .expect("unable to obtain thread lock for key generation engine")
+                    .update(&subkey);
             });
 
-            scope?;
-
-            let keygen = keygen
-                .lock()
-                .expect("unable to obtain thread lock for key generation engine");
-
-            io::stdout().lock().write_all(keygen.bytes())?;
+            if bytes_read < MAX_KEY_SIZE {
+                break;
+            }
         }
 
         Ok(())
-    }
+    });
+
+    scope?;
+
+    let keygen = keygen
+        .lock()
+        .expect("unable to obtain thread lock for key generation engine");
+    let bytes = keygen.bytes();
+
+    io.write_bytes(bytes)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -101,6 +147,7 @@ mod tests {
 
     #[test]
     fn test_keygen() {
+        let hash = Hash::default();
         let keystream = [
             String::from("Hello world 1"),
             String::from("Hello world 2"),
@@ -112,8 +159,11 @@ mod tests {
 
         let keystream_ctr = keystream.len();
         for i in 0..keystream_ctr {
-            engine1.update(keystream[i].as_bytes());
-            engine2.update(keystream[keystream_ctr - 1 - i].as_bytes());
+            let key1 = hash.hash(keystream[i].as_bytes());
+            engine1.update(&key1);
+
+            let key2 = hash.hash(keystream[keystream_ctr - 1 - i].as_bytes());
+            engine2.update(&key2);
         }
 
         assert_eq!(engine1.bytes(), engine2.bytes());

@@ -26,6 +26,7 @@ pub struct FileArg {
     pub key: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct IO {
     filein: Option<File>,
     fileout: Option<File>,
@@ -65,6 +66,20 @@ impl IO {
         match &mut self.fileout {
             None => std::io::stdout().write(&block.bytes()[..n]),
             Some(fd) => fd.write(&block.bytes()[..n]),
+        }
+    }
+
+    pub fn read_bytes(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        match &mut self.filein {
+            None => std::io::stdin().read(bytes),
+            Some(fd) => fd.read(bytes),
+        }
+    }
+
+    pub fn write_bytes(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        match &mut self.fileout {
+            None => std::io::stdout().write(bytes),
+            Some(fd) => fd.write(bytes),
         }
     }
 }
