@@ -9,6 +9,7 @@ pub fn pad(block: &mut Block, block_size: usize) {
     }
 }
 
+/// returns the number of padding bytes removed
 pub fn unpad(block: &mut Block) -> usize {
     let block_len = BLOCK_SIZE;
 
@@ -29,7 +30,7 @@ pub fn unpad(block: &mut Block) -> usize {
         bytes[block_len - 1 - i] = 0;
     }
 
-    BLOCK_SIZE - bytes_padded
+    bytes_padded
 }
 
 #[cfg(test)]

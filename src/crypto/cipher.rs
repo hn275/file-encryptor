@@ -7,6 +7,8 @@ use aes::{
     Aes256,
 };
 
+use super::pkcs7;
+
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct Cipher {
@@ -58,14 +60,17 @@ impl Cipher {
         self.tag.compute(block);
     }
 
-    #[allow(dead_code)]
-    pub fn decrypt_block_inplace(&mut self, block: &mut Block) {
-        // self.payload_len += size as u64;
+    pub fn decrypt_block_inplace(&mut self, block: &mut Block) -> usize {
         self.tag.compute(block);
         self.iv.inc_counter();
         let mut ctr = self.iv;
         self.aes.encrypt_block((&mut ctr).into());
         block.xor(&ctr);
+
+        let size = BLOCK_SIZE - pkcs7::unpad(block);
+        self.payload_len += size;
+
+        size
     }
 
     pub fn tag(&mut self) -> &Block {

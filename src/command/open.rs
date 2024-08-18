@@ -1,7 +1,7 @@
 use std::{fs::OpenOptions, io::Read};
 
 use crate::{
-    crypto::{block::Block, cipher::Cipher, pkcs7, Key, BLOCK_SIZE, IV_SIZE, KEY_SIZE},
+    crypto::{block::Block, cipher::Cipher, Key, BLOCK_SIZE, IV_SIZE, KEY_SIZE},
     error,
     ioutils::{FileArg, IO},
 };
@@ -55,7 +55,6 @@ pub fn open(arg: &FileArg) -> error::Result<()> {
     loop {
         bytes_read = io.read_block(&mut loop_buf)?;
         if bytes_read != BLOCK_SIZE {
-            println!("last bytes_read: {}", bytes_read);
             break;
         }
 
@@ -68,20 +67,15 @@ pub fn open(arg: &FileArg) -> error::Result<()> {
 
     // buf_proc contains the last ciphertext
     // buf_read contains the tag
-    cipher.decrypt_block_inplace(&mut buf_proc);
-    let buf_len = pkcs7::unpad(&mut buf_proc);
+    let buf_len = cipher.decrypt_block_inplace(&mut buf_proc);
     io.write_block(&buf_proc, buf_len)?;
 
     let decrypted_tag = buf_read.bytes();
-    dbg!(&decrypted_tag);
-    dbg!(&cipher.tag().bytes());
-    /*
     for (i, byte) in cipher.tag().bytes().iter().enumerate() {
         if *byte != decrypted_tag[i] {
             return Err(error::Error::Encryption("invalid tag".to_string()));
         }
     }
-*/
 
     Ok(())
 }
