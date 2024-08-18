@@ -56,7 +56,8 @@ pub fn seal(filearg: &FileArg) -> error::Result<()> {
     let iv = Block::new_iv();
     io.write_block(&iv, IV_SIZE)?;
 
-    let mut cipher = cipher::Cipher::new(key, iv, &filearg.aad);
+    // let mut cipher = cipher::Cipher::new(key, iv, &filearg.aad);
+    let mut cipher = cipher::Cipher::new(key, iv, &None);
 
     // stream file/stdin
     let mut eof = false;

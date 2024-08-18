@@ -17,9 +17,11 @@ pub struct FileArg {
     #[arg(short, long)]
     pub output_file: Option<String>,
 
+    /*
     /// (optional) additional authenticated data
     #[arg(short, long)]
     pub aad: Option<String>,
+    */
 
     /// (optional) key file, read (the first) 32 byte from stdin by default
     #[arg(short, long)]
