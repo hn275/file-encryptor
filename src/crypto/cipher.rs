@@ -72,12 +72,12 @@ impl Cipher {
         let mut block = Block::default();
         block.bytes_mut()[..8].copy_from_slice(&self.payload_len.to_be_bytes());
         block.bytes_mut()[8..].copy_from_slice(&self.aad_len.to_be_bytes());
-        block.xor(&self.tag.block());
+        block.xor(self.tag.block());
         self.tag.compute(&block);
 
-        self.tag.buf.xor(&self.tag.counter_0);
+        self.tag.tag_buf.xor(&self.tag.counter_0);
 
-        &self.tag.buf
+        &self.tag.tag_buf
     }
 
     fn encrypt_block(&self, block: &mut Block) {
@@ -90,7 +90,7 @@ impl Cipher {
 pub struct Tag {
     counter_0: Block,
     h: Block,
-    buf: Block,
+    tag_buf: Block,
 }
 
 impl Tag {
@@ -98,7 +98,7 @@ impl Tag {
         Self {
             counter_0,
             h,
-            buf: Block::default(),
+            tag_buf: Block::default(),
         }
     }
 
@@ -129,17 +129,17 @@ impl Tag {
     }
 
     fn block(&self) -> &Block {
-        &self.buf
+        &self.tag_buf
     }
 
     fn compute(&mut self, block: &Block) {
-        self.buf.xor(&block);
-        Self::galois_multiply(&mut self.buf, &self.h);
+        self.tag_buf.xor(block);
+        self.tag_buf = Self::galois_multiply(&self.tag_buf, &self.h);
     }
 
     fn galois_multiply(x: &Block, y: &Block) -> Block {
         let mut z = Block::default();
-        let mut v = x.clone();
+        let mut v = *x;
 
         for i in 0..128 {
             if y.bitset(i) {

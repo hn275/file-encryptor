@@ -80,7 +80,7 @@ impl Exec for Encryptor {
             }
         }
 
-        io.write_block(&cipher.tag(), BLOCK_SIZE)?;
+        io.write_block(cipher.tag(), BLOCK_SIZE)?;
         Ok(())
     }
 }
