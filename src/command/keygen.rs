@@ -36,7 +36,7 @@ impl Engine {
     }
 
     pub fn update(&mut self, subkey: &Key) -> &mut Self {
-        Self::xor_key(&mut self.key_buf, &subkey);
+        Self::xor_key(&mut self.key_buf, subkey);
         self
     }
 

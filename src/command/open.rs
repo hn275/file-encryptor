@@ -12,7 +12,7 @@ pub fn open(arg: &FileArg) -> error::Result<()> {
     let key = match &arg.key {
         None => {
             let mut key = Key::default();
-            std::io::stdin().read(&mut key)?;
+            let _ = std::io::stdin().read(&mut key)?;
             key
         }
         Some(filename) => {
