@@ -65,7 +65,7 @@ file-encryptor seal < secret.key < foo.plaintext > foo.ciphertext
 file-encryptor seal -k secret.key -i foo.plaintext -o foo.ciphertext
 ```
 
-#### 3. Decrypting the ciphertext file `foo_ciphered`
+#### 3. Decrypting the ciphertext file `foo.ciphertext`
 
 To open the `foo.ciphertext` file:
 
