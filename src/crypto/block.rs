@@ -92,6 +92,16 @@ impl Block {
             carry_bit = new_carry;
         });
     }
+
+    pub fn bitset(&self, bit: u8) -> bool {
+        let byte_blocks = bit / 8;
+        let byte_blocks = BLOCK_SIZE - 1 - (byte_blocks as usize);
+        dbg!(&byte_blocks);
+
+        let bit_mask = (1 << (bit % 8)) as u8;
+        dbg!(&bit_mask);
+        self.0[byte_blocks] & bit_mask != 0
+    }
 }
 
 #[cfg(test)]
@@ -142,6 +152,17 @@ mod tests {
         bytes.bin_shift_left();
         for (i, byte) in expected.iter().enumerate() {
             assert_eq!(bytes.0[i], *byte);
+        }
+    }
+
+    #[test]
+    fn bitset_in_blocks() {
+        let mut buf = Block::default();
+        buf.0[BLOCK_SIZE - 1] = 1;
+
+        for i in 0..128 {
+            assert!(buf.bitset(i));
+            buf.bin_shift_left();
         }
     }
 
