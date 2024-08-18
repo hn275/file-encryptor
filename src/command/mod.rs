@@ -5,7 +5,7 @@ pub mod keygen;
 pub mod open;
 pub mod seal;
 
-/// A small Rust program to deal with file encryption.
+/// A Rust CLI program that streams files for encryption and decryption.
 #[derive(Parser, Debug)]
 pub struct Cli {
     /// Action to perform on the input file
