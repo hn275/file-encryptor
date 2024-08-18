@@ -1,34 +1,34 @@
 # file-encryptor
 
-A small Rust program designed to encrypt and decrypt files securely using **Advanced Encryption
+A small Rust program to stream and encrypt/decrypt files securely using **Advanced Encryption
 Standard-Galois/Counter Mode**, or [AES-GCM](https://en.wikipedia.org/wiki/Galois/Counter_Mode),
 with a 256-bit key produced by
 [scrypt](https://en.wikipedia.org/wiki/Scrypt) key derivation function (KDF).
 
-## Use Cases
-
-You can use this tool for various purposes, though here are some examples:
-
-- **Secure File Transfer**: Encrypt sensitive files before transferring them over insecure
-  channels, such as email or USB drives. (Similar to how data transfer over the internet)
-
-- **Data Backup**: Enhance the security of backup files by encrypting them before storing them in
-  cloud storage or external hard drives.
-
-- **Software Configuration/Environment Variables**: Need to share those secrets?
-  Encrypt them then commit to version control. Contributors can decrypt the files locally on their
-  machine.
-
-## Installation
-
-```sh
-cargo install --path .
-```
-
 ## Usage
 
-By default, all output will simply be written to standard output. I wanted a solution that offers
-flexibility for scripting, see [examples](./examples/).
+I wanted a small cli program that would _stream_ the file, and is flexible enough for
+scripting!
+
+Note that the use of additional authenticated data is not supported as of the current version.
+
+### General Usage
+
+```sh
+file-encryptor --help
+A Rust CLI program that streams files for encryption and decryption
+
+Usage: file-encryptor <COMMAND>
+
+Commands:
+  keygen  generate a key, from pure random bytes, or from an input password
+  open    open an encrypted file
+  seal    seal a plaintext file
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
 
 ### Cookbook
 
@@ -40,62 +40,45 @@ types, since it's all 1's and 0's for computers anyway.
 
 ```sh
 file-encryptor keygen < frankenstein.txt > secret.key
-```
 
-You can also pass in the option `-p` (or `--password`) to generate key from a certain passphrase.
+# or -i and -o
+file-encryptor keygen -i frankenstein.txt -o secret.key
 
-```sh
+# You can also pass in the option `-p` (or `--password`)
+# to generate key from a certain passphrase.
 file-encryptor keygen -p "this is my password" > secret.key
+
+# and for all pseudoramdom bytes
+file-encryptor keygen -r > secret.key
 ```
 
-- NOTE: The AES256 key, which consists of 32 bytes, is produced with the
-  [following configuration](https://tobtu.com/minimum-password-settings/) as parameters for KDF scrypt:
-  - $log_2N = 16$
-  - $R = 8$
-  - $P = 2$
+#### 2. Encrypting the file `foo.plaintext`
 
-#### 2. Encrypting the file `foo.txt`
-
-To seal (encrypt) a file, say `foo.txt`:
+To seal (encrypt) a file, say `foo.plaintext`:
 
 ```sh
-file-encryptor seal foo.txt < secret.key > foo_ciphered
-```
+# By default, it will read the first 32 bytes from stdin for as the key,
+# then the rest as plaintext.
+file-encryptor seal < secret.key < foo.plaintext > foo.ciphertext
 
-With additional authenticated data:
-
-```sh
-file-encryptor seal foo.txt -a "haln_01@proton.me" < secret.key > foo_ciphered
+# Or passing in the file names from cli
+file-encryptor seal -k secret.key -i foo.plaintext -o foo.ciphertext
 ```
 
 #### 3. Decrypting the ciphertext file `foo_ciphered`
 
-To open the `foo_ciphered` file:
+To open the `foo.ciphertext` file:
 
 ```sh
-file-encryptor open foo.txt < secret.key > foo-plaintext.txt
+# By default, it will read the first 32 bytes from stdin for as the key,
+# then the rest as ciphertext.
+file-encryptor open < secret.key < foo.ciphertext > foo.plaintext.decrypted
+
+# Or passing in the file names from cli
+file-encryptor open -k secret.key -i foo.ciphertext -o foo.plaintext.decrypted
 ```
 
-And if additional authenticated data was used:
+## Breaking Changes
 
-```sh
-file-encryptor open foo.txt -a "haln_01@proton.me" < secret.key > foo-plaintext.txt
-```
-
-### General Usage
-
-```sh
-file-encryptor --help
-A small Rust program to deal with file encryption
-
-Usage: file-encryptor [OPTIONS] <COMMAND>
-
-Commands:
-  keygen  generate a key, from pure random bytes, or from an input password
-  open    open an encrypted file
-  seal    seal a plaintext file
-  help    Print this message or the help of the given subcommand(s)
-
-Options:
-  -h, --help  Print help
-```
+The key generation schema is different, since `file-encryptor` now also streams the
+input key file.

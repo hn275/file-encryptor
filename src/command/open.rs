@@ -1,49 +1,82 @@
-use clap::Parser;
-use std::{
-    fs,
-    io::{self, Read, Write},
-    path,
+use std::{fs::OpenOptions, io::Read};
+
+use crate::{
+    crypto::{block::Block, cipher::Cipher, Key, BLOCK_SIZE, IV_SIZE, KEY_SIZE},
+    error,
+    ioutils::{FileArg, IO},
 };
 
-use super::Command;
-use crate::crypto::{self, cipher, encoding};
+pub fn open(arg: &FileArg) -> error::Result<()> {
+    let mut io = IO::new(&arg.input_file, &arg.output_file)?;
 
-#[derive(Parser, Debug, Clone)]
-pub struct Decryptor {
-    /// input file
-    input_file: String,
-
-    /// (optional) additional authenticated data
-    #[arg(short, long)]
-    aad: Option<String>,
-}
-
-impl Command for Decryptor {
-    fn handle(&self) -> io::Result<()> {
-        let mut key: [u8; 32] = [0; 32];
-        io::stdin().lock().read_exact(&mut key)?;
-
-        let file_len: usize = path::Path::new(&self.input_file)
-            .metadata()?
-            .len()
-            .try_into()
-            .expect("failed to convert u64 to usize");
-        let mut file_buf = crypto::cipher::make_buffer(file_len);
-        fs::OpenOptions::new()
-            .read(true)
-            .open(&self.input_file)?
-            .read_exact(&mut file_buf)?;
-
-        let aad = match &self.aad {
-            None => None,
-            Some(aad) => {
-                let mut buf: [u8; 32] = [0; 32];
-                encoding::sha256::encode(&mut buf, aad.as_bytes());
-                Some(buf)
+    let key = match &arg.key {
+        None => {
+            let mut key = Key::default();
+            let _ = std::io::stdin().read(&mut key)?;
+            key
+        }
+        Some(filename) => {
+            let mut file = OpenOptions::new().read(true).open(filename)?;
+            if file.metadata()?.len() != (KEY_SIZE as u64) {
+                return Err(error::Error::Key);
             }
-        };
 
-        crypto::cipher::Cipher::new(&key).decrypt(&mut file_buf, &aad)?;
-        io::stdout().lock().write_all(&file_buf[cipher::OVERHEAD..])
+            let mut key = Key::default();
+            file.read_exact(&mut key)?;
+            key
+        }
+    };
+
+    let mut iv = Block::default();
+    io.read_bytes(&mut iv.bytes_mut()[0..IV_SIZE])?;
+
+    // let mut cipher = Cipher::new(key, iv, &arg.aad);
+    let mut cipher = Cipher::new(key, iv, &None);
+
+    // read in the first block
+    let mut buf_proc = Block::default();
+    let mut bytes_read = io.read_block(&mut buf_proc)?;
+    if bytes_read != BLOCK_SIZE {
+        // invalid padding
+        return Err(error::Error::Encryption(String::from(
+            "invalid ciphertext file",
+        )));
     }
+
+    let mut buf_read = Block::default();
+    bytes_read = io.read_block(&mut buf_read)?;
+    if bytes_read != BLOCK_SIZE {
+        // missing auth tag
+        return Err(error::Error::Encryption(String::from(
+            "invalid ciphertext file",
+        )));
+    }
+
+    let mut loop_buf = Block::default();
+    loop {
+        bytes_read = io.read_block(&mut loop_buf)?;
+        if bytes_read != BLOCK_SIZE {
+            break;
+        }
+
+        cipher.decrypt_block_inplace(&mut buf_proc);
+        io.write_block(&buf_proc, BLOCK_SIZE)?;
+
+        buf_proc.bytes_mut().copy_from_slice(buf_read.bytes());
+        buf_read.bytes_mut().copy_from_slice(loop_buf.bytes());
+    }
+
+    // buf_proc contains the last ciphertext
+    // buf_read contains the tag
+    let buf_len = cipher.decrypt_block_inplace(&mut buf_proc);
+    io.write_block(&buf_proc, buf_len)?;
+
+    let decrypted_tag = buf_read.bytes();
+    for (i, byte) in cipher.tag().bytes().iter().enumerate() {
+        if *byte != decrypted_tag[i] {
+            return Err(error::Error::Encryption("invalid tag".to_string()));
+        }
+    }
+
+    Ok(())
 }

@@ -1,13 +1,17 @@
 [package]
 name = "file-encryptor"
-version = "0.1.2"
+version = "1.0.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aes-gcm = { version = "0.10.3", features = ["aes", "getrandom"] }
 clap = { version = "4.5.4", features = ["derive"] }
-rpassword = "7.3.1"
-rust-crypto = "0.2.36"
 scrypt = { version = "0.11.0", default-features = false, features = ["std"] }
+aes = { version = "0.8.4" }
+rayon = { version = "1.10.0" }
+anyhow = "1.0.86"
+rand = { version = "0.8.5", features = ["default"] }
+
+# for testing
+aes-gcm = { version = "0.10.3", features = ["aes", "getrandom"] }

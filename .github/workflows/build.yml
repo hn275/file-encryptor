@@ -1,6 +1,6 @@
 on: [push]
 
-name: Clippy
+name: Lint, Test, Build
 
 # Make sure CI fails on all warnings, including Clippy lints
 env:
@@ -8,14 +8,16 @@ env:
 
 jobs:
   build:
-    name: Build scheduler app release
+    name: Build binary in release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
-      - name: Clippy
+      - name: Lint
         run: cargo clippy --all-targets --all-features
+      - name: Test
+        run: cargo test --release
       - name: Build
         run: cargo build --release --all-features
