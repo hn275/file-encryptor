@@ -1,10 +1,12 @@
 use aes::cipher::generic_array::{typenum::U16, GenericArray};
-use num::BigUint;
 
 use crate::crypto::{BLOCK_SIZE, IV_SIZE};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Block([u8; BLOCK_SIZE]);
+
+pub const REDUCTION_POLYNOMIAL: Block =
+    Block([0b1110_0001, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
 impl<'a> From<&'a mut Block> for &'a mut GenericArray<u8, U16> {
     fn from(value: &'a mut Block) -> Self {
@@ -18,12 +20,7 @@ impl<'a> From<&'a Block> for &'a [u8; BLOCK_SIZE] {
     }
 }
 
-impl From<&Block> for BigUint {
-    fn from(value: &Block) -> Self {
-        BigUint::from_bytes_be(&value.0)
-    }
-}
-
+#[cfg(test)]
 impl From<[u8; BLOCK_SIZE]> for Block {
     fn from(buf: [u8; BLOCK_SIZE]) -> Self {
         Self(buf)
@@ -96,10 +93,8 @@ impl Block {
     pub fn bitset(&self, bit: u8) -> bool {
         let byte_blocks = bit / 8;
         let byte_blocks = BLOCK_SIZE - 1 - (byte_blocks as usize);
-        dbg!(&byte_blocks);
 
         let bit_mask = (1 << (bit % 8)) as u8;
-        dbg!(&bit_mask);
         self.0[byte_blocks] & bit_mask != 0
     }
 }

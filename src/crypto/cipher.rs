@@ -1,9 +1,11 @@
-use crate::crypto::{block::Block, Key, BLOCK_SIZE};
+use crate::crypto::{
+    block::{Block, REDUCTION_POLYNOMIAL},
+    Key, BLOCK_SIZE,
+};
 use aes::{
     cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit},
     Aes256,
 };
-use num::{BigUint, FromPrimitive};
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -21,10 +23,10 @@ impl Cipher {
         let aes = Aes256::new(&key.into());
 
         let mut counter0 = iv;
-        aes.encrypt_block(GenericArray::from_mut_slice(counter0.bytes_mut()));
+        aes.encrypt_block((&mut counter0).into());
 
         let mut h = Block::default();
-        aes.encrypt_block(GenericArray::from_mut_slice(h.bytes_mut()));
+        aes.encrypt_block((&mut h).into());
 
         let mut tag = Tag::new(counter0, h);
         if let Some(aad) = aad {
@@ -66,17 +68,16 @@ impl Cipher {
         block.xor(&ctr);
     }
 
-    pub fn tag(&mut self) -> Block {
+    pub fn tag(&mut self) -> &Block {
         let mut block = Block::default();
         block.bytes_mut()[..8].copy_from_slice(&self.payload_len.to_be_bytes());
         block.bytes_mut()[8..].copy_from_slice(&self.aad_len.to_be_bytes());
         block.xor(&self.tag.block());
         self.tag.compute(&block);
 
-        let mut tagbuf = self.tag.block();
-        tagbuf.xor(&self.tag.counter_0);
+        self.tag.buf.xor(&self.tag.counter_0);
 
-        tagbuf
+        &self.tag.buf
     }
 
     fn encrypt_block(&self, block: &mut Block) {
@@ -88,31 +89,16 @@ impl Cipher {
 #[derive(Clone, Debug)]
 pub struct Tag {
     counter_0: Block,
-    h: BigUint,
-    tag: BigUint,
-    reduction_poly: BigUint,
-    msb_mask: BigUint,
-    clamp_mask: BigUint,
+    h: Block,
+    buf: Block,
 }
 
 impl Tag {
     fn new(counter_0: Block, h: Block) -> Self {
-        let reduction_poly: BigUint = BigUint::from_u64(0b1110_0001).unwrap() << 120;
-
-        let msb_mask: BigUint = num::BigUint::from(0b1000_0000u128) << 120;
-
-        let clamp_mask = (BigUint::from(1u128) << 128) - 1u128;
-
-        let h = BigUint::from(&h);
-        let tag = BigUint::from(&Block::default());
-
         Self {
             counter_0,
             h,
-            tag,
-            reduction_poly,
-            msb_mask,
-            clamp_mask,
+            buf: Block::default(),
         }
     }
 
@@ -124,16 +110,15 @@ impl Tag {
                 block = Block::default();
                 block.bytes_mut().copy_from_slice(auth_data.as_ref());
                 eof = true;
-                BigUint::from(&block)
+                block
             } else {
                 block
                     .bytes_mut()
                     .copy_from_slice(auth_data[..BLOCK_SIZE].as_ref());
-                BigUint::from(&block)
+                block
             };
 
-            self.tag ^= &aad_block;
-            self.tag = self.galois_multiply(&self.tag, &self.h);
+            self.compute(&aad_block);
 
             if eof {
                 break;
@@ -143,39 +128,32 @@ impl Tag {
         }
     }
 
-    fn block(&self) -> Block {
-        let mut block = Block::default();
-        block.bytes_mut().copy_from_slice(&self.tag.to_bytes_be());
-        block
+    fn block(&self) -> &Block {
+        &self.buf
     }
 
     fn compute(&mut self, block: &Block) {
-        self.tag ^= BigUint::from(block);
-        self.tag = self.galois_multiply(&self.tag, &self.h);
+        self.buf.xor(&block);
+        Self::galois_multiply(&mut self.buf, &self.h);
     }
 
-    fn galois_multiply(&self, x: &BigUint, y: &BigUint) -> num::BigUint {
-        let mut z = num::BigUint::ZERO;
+    fn galois_multiply(x: &Block, y: &Block) -> Block {
+        let mut z = Block::default();
         let mut v = x.clone();
 
-        let mut maskbin = num::BigUint::from_u8(1).expect("invalid value for BigUint");
-
-        for _ in 0..128 {
-            let bitset = y & &maskbin != num::BigUint::ZERO;
-            if bitset {
-                z ^= &v;
+        for i in 0..128 {
+            if y.bitset(i) {
+                z.xor(&v);
             }
 
-            let msb_set = &v & &self.msb_mask != num::BigUint::ZERO;
-            v <<= 1;
+            let msb_set = v.bitset(127);
+            v.bin_shift_left();
             if msb_set {
-                v ^= &self.reduction_poly;
+                v.xor(&REDUCTION_POLYNOMIAL);
             }
-
-            maskbin <<= 1;
         }
 
-        z & &self.clamp_mask // clamp the result to 128 bits
+        z
     }
 }
 
