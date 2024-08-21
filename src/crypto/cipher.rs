@@ -111,9 +111,9 @@ impl Tag {
         let mut eof = false;
         let mut block = Block::default();
         while !eof {
-            let aad_block = if auth_data.len() != BLOCK_SIZE {
+            let aad_block = if auth_data.len() < BLOCK_SIZE {
                 block = Block::default();
-                block.bytes_mut().copy_from_slice(auth_data.as_ref());
+                block.bytes_mut()[..auth_data.len()].copy_from_slice(auth_data.as_ref());
                 eof = true;
                 block
             } else {

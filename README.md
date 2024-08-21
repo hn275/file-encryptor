@@ -10,8 +10,6 @@ with a 256-bit key produced by
 I wanted a small cli program that would _stream_ the file, and is flexible enough for
 scripting!
 
-Note that the use of additional authenticated data is not supported as of the current version.
-
 ### General Usage
 
 ```sh

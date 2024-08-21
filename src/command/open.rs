@@ -30,8 +30,7 @@ pub fn open(arg: &FileArg) -> error::Result<()> {
     let mut iv = Block::default();
     io.read_bytes(&mut iv.bytes_mut()[0..IV_SIZE])?;
 
-    // let mut cipher = Cipher::new(key, iv, &arg.aad);
-    let mut cipher = Cipher::new(key, iv, &None);
+    let mut cipher = Cipher::new(key, iv, &arg.aad);
 
     // read in the first block
     let mut buf_proc = Block::default();
