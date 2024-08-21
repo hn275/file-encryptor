@@ -61,6 +61,7 @@ impl Cipher {
     pub fn decrypt_block_inplace(&mut self, block: &mut Block) -> usize {
         self.iv.inc_counter();
         let mut ctr = self.iv;
+
         self.aes.encrypt_block((&mut ctr).into());
         block.xor(&ctr);
 

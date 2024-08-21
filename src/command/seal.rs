@@ -3,27 +3,7 @@ use crate::{
     error,
     ioutils::{FileArg, IO},
 };
-use clap::Parser;
 use std::{fs::OpenOptions, io::Read};
-
-#[derive(Parser, Debug, Clone)]
-pub struct Encryptor {
-    /// (optional) input file, read from stdin by default
-    #[arg(short, long)]
-    input_file: Option<String>,
-
-    /// (optional) output file, write to stdout by default
-    #[arg(short, long)]
-    output_file: Option<String>,
-
-    /// (optional) additional authenticated data
-    #[arg(short, long)]
-    aad: Option<String>,
-
-    /// (optional) key file, read (the first) 32 byte from stdin by default
-    #[arg(short, long)]
-    key: Option<String>,
-}
 
 pub fn seal(filearg: &FileArg) -> error::Result<()> {
     let mut io = IO::new(&filearg.input_file, &filearg.output_file)?;
