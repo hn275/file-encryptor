@@ -1,7 +1,8 @@
-use std::{fs::OpenOptions, io::Read};
+use aes::{cipher::BlockEncrypt, Aes256};
+use aes_gcm::KeyInit;
 
 use crate::{
-    crypto::{block::Block, cipher::Cipher, Key, BLOCK_SIZE, IV_SIZE, KEY_SIZE},
+    crypto::{block::Block, pkcs7, tag::Tag, Key, BLOCK_SIZE, IV_SIZE},
     error,
     ioutils::{FileArg, IO},
 };
@@ -9,33 +10,21 @@ use crate::{
 pub fn open(arg: &FileArg) -> error::Result<()> {
     let mut io = IO::new(&arg.input_file, &arg.output_file)?;
 
-    let key = match &arg.key {
-        None => {
-            let mut key = Key::default();
-            let _ = std::io::stdin().read(&mut key)?;
-            key
-        }
-        Some(filename) => {
-            let mut file = OpenOptions::new().read(true).open(filename)?;
-            if file.metadata()?.len() != (KEY_SIZE as u64) {
-                return Err(error::Error::Key);
-            }
+    let key = Key::try_from(arg)?;
 
-            let mut key = Key::default();
-            file.read_exact(&mut key)?;
-            key
-        }
-    };
+    let aes = Aes256::new(&key.into());
 
     let mut iv = Block::default();
     io.read_bytes(&mut iv.bytes_mut()[0..IV_SIZE])?;
 
-    let mut cipher = Cipher::new(key, iv, &arg.aad);
+    let mut tag = Tag::new(&aes, &iv);
+    if let Some(aad) = &arg.aad {
+        tag.with_aad(aad.as_bytes());
+    }
 
     // read in the first block
     let mut buf_proc = Block::default();
-    let mut bytes_read = io.read_block(&mut buf_proc)?;
-    if bytes_read != BLOCK_SIZE {
+    if io.read_block(&mut buf_proc)? != BLOCK_SIZE {
         // invalid padding
         return Err(error::Error::Encryption(String::from(
             "invalid ciphertext file",
@@ -43,8 +32,7 @@ pub fn open(arg: &FileArg) -> error::Result<()> {
     }
 
     let mut buf_read = Block::default();
-    bytes_read = io.read_block(&mut buf_read)?;
-    if bytes_read != BLOCK_SIZE {
+    if io.read_block(&mut buf_read)? != BLOCK_SIZE {
         // missing auth tag
         return Err(error::Error::Encryption(String::from(
             "invalid ciphertext file",
@@ -52,17 +40,29 @@ pub fn open(arg: &FileArg) -> error::Result<()> {
     }
 
     let mut loop_buf = Block::default();
+
     loop {
-        bytes_read = io.read_block(&mut loop_buf)?;
+        let bytes_read = io.read_block(&mut loop_buf)?;
+
         if bytes_read != BLOCK_SIZE {
+            //  invalid padding
+            if bytes_read != 0 {
+                return Err(error::Error::Encryption(String::from(
+                    "invalid ciphertext file",
+                )));
+            }
+
             break;
         }
 
-        cipher.tag.compute(&buf_proc);
+        tag.update_state(&buf_proc);
 
-        cipher.decrypt_block_inplace(&mut buf_proc);
+        let mut ctr = iv.next_counter();
+        aes.encrypt_block(ctr.bytes_mut().into());
 
-        io.write_block(&buf_proc, BLOCK_SIZE)?;
+        buf_proc.xor(&ctr);
+
+        io.write_block(&buf_proc)?;
 
         buf_proc.bytes_mut().copy_from_slice(buf_read.bytes());
         buf_read.bytes_mut().copy_from_slice(loop_buf.bytes());
@@ -70,11 +70,24 @@ pub fn open(arg: &FileArg) -> error::Result<()> {
 
     // buf_proc contains the last ciphertext
     // buf_read contains the tag
-    let buf_len = cipher.decrypt_block_inplace(&mut buf_proc);
-    io.write_block(&buf_proc, buf_len)?;
+
+    tag.update_state(&buf_proc);
+
+    let mut ctr = iv.next_counter();
+    aes.encrypt_block(ctr.bytes_mut().into());
+
+    buf_proc.xor(&ctr);
+
+    let buf_len = BLOCK_SIZE - pkcs7::unpad(&mut buf_proc);
+
+    io.write_bytes(&buf_proc.bytes()[..buf_len])?;
+
+    // calculate and verify auth tag
 
     let decrypted_tag = buf_read.bytes();
-    for (i, byte) in cipher.finalize().bytes().iter().enumerate() {
+    let authenticated_tag = tag.authenticate().bytes();
+
+    for (i, byte) in authenticated_tag.iter().enumerate() {
         if *byte != decrypted_tag[i] {
             return Err(error::Error::Encryption("invalid tag".to_string()));
         }

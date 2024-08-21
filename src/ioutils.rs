@@ -62,11 +62,13 @@ impl IO {
         }
     }
 
-    pub fn write_block(&mut self, block: &Block, n: usize) -> std::io::Result<usize> {
+    pub fn write_block(&mut self, block: &Block) -> std::io::Result<()> {
         match &mut self.fileout {
-            None => std::io::stdout().write(&block.bytes()[..n]),
-            Some(fd) => fd.write(&block.bytes()[..n]),
-        }
+            None => std::io::stdout().write(block.bytes()),
+            Some(fd) => fd.write(block.bytes()),
+        }?;
+
+        Ok(())
     }
 
     pub fn read_bytes(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {

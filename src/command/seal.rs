@@ -1,45 +1,32 @@
+use aes::{cipher::BlockEncrypt, Aes256};
+use aes_gcm::KeyInit;
+
 use crate::{
-    crypto::{self, block::Block, cipher, Key, BLOCK_SIZE, IV_SIZE, KEY_SIZE},
+    crypto::{self, block::Block, tag::Tag, Key, BLOCK_SIZE, IV_SIZE},
     error,
     ioutils::{FileArg, IO},
 };
-use std::{fs::OpenOptions, io::Read};
 
 pub fn seal(filearg: &FileArg) -> error::Result<()> {
     let mut io = IO::new(&filearg.input_file, &filearg.output_file)?;
 
-    // reads in key, if `-k` flag is passed, reads from file
-    // otherwise reads (the first) 32 bytes from stdin
-    let key = match &filearg.key {
-        None => {
-            let mut buf = Key::default();
-            std::io::stdin().read_exact(&mut buf).map_err(|err| {
-                eprintln!("{}", err);
-                error::Error::Key
-            })?;
+    let key = Key::try_from(filearg)?;
 
-            buf
-        }
-        Some(key) => {
-            let mut key_file = OpenOptions::new().read(true).open(key)?;
-            if key_file.metadata()?.len() != KEY_SIZE as u64 {
-                return Err(error::Error::Key);
-            }
-            let mut buf = Key::default();
-            key_file.read_exact(&mut buf)?;
+    let mut iv = Block::new_iv();
 
-            buf
-        }
-    };
+    let aes = Aes256::new(&key.into());
 
-    // iv
-    let iv = Block::new_iv();
-    io.write_block(&iv, IV_SIZE)?;
+    let mut tag = Tag::new(&aes, &iv);
+    if let Some(aad) = &filearg.aad {
+        tag.with_aad(aad.as_bytes());
+    }
 
-    let mut cipher = cipher::Cipher::new(key, iv, &filearg.aad);
-
-    // stream file/stdin
     let mut eof = false;
+    #[allow(unused)]
+    let mut block_index: u64 = 0;
+
+    io.write_bytes(&iv.bytes()[..IV_SIZE])?;
+
     loop {
         let mut buf = Block::default();
 
@@ -49,17 +36,23 @@ pub fn seal(filearg: &FileArg) -> error::Result<()> {
             eof = true;
         }
 
-        // cipher block
-        cipher.tag.compute(&buf);
-        cipher.encrypt_block_inplace(&mut buf, bytes_read);
+        let mut ctr = iv.next_counter();
+        aes.encrypt_block(ctr.bytes_mut().into());
 
-        io.write_block(&buf, BLOCK_SIZE)?;
+        buf.xor(&ctr);
+
+        tag.update_state(&buf);
+
+        io.write_block(&buf)?;
 
         if eof {
             break;
         }
+
+        block_index += 1;
     }
 
-    io.write_block(cipher.finalize(), BLOCK_SIZE)?;
+    io.write_block(tag.authenticate())?;
+
     Ok(())
 }

@@ -58,6 +58,22 @@ impl Block {
         &self.0[..IV_SIZE]
     }
 
+    pub fn next_counter(&mut self) -> Block {
+        let ctr_bytes = self.0[IV_SIZE..].as_mut();
+        let ctr_bound = ctr_bytes.len();
+        for i in 0..ctr_bound {
+            let byte = &mut ctr_bytes[ctr_bound - i - 1];
+            if *byte == 255 {
+                *byte = 0;
+                continue;
+            }
+            *byte += 1;
+            break;
+        }
+
+        *self
+    }
+
     pub fn inc_counter(&mut self) {
         let ctr_bytes = self.0[IV_SIZE..].as_mut();
         let ctr_bound = ctr_bytes.len();
