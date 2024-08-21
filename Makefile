@@ -1,5 +1,10 @@
-test:
-	cargo build --release
-	./target/release/file-encryptor seal -k test-output-key -i test-input.txt -a "haln_01@proton.me" -o test-output.ciphertext
-	./target/release/file-encryptor open -k test-output-key -i test-output.ciphertext -a "haln_01@proton.me"  -o test-output.plaintext
-	diff test-output.plaintext test-input.txt
+test: seal open
+	diff test-input.txt test-output.plaintext
+
+seal:
+	cargo run -- seal -k test-output-key -i test-input.txt -a "haln_01@proton.me" -o test-output.ciphertext
+
+open:
+	cargo run -- open -k test-output-key -i test-output.ciphertext -a "haln_01@proton.me"  -o test-output.plaintext
+
+.PHONY: test seal open
