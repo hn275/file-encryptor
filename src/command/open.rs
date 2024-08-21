@@ -58,7 +58,10 @@ pub fn open(arg: &FileArg) -> error::Result<()> {
             break;
         }
 
+        cipher.tag.compute(&buf_proc);
+
         cipher.decrypt_block_inplace(&mut buf_proc);
+
         io.write_block(&buf_proc, BLOCK_SIZE)?;
 
         buf_proc.bytes_mut().copy_from_slice(buf_read.bytes());
@@ -71,7 +74,7 @@ pub fn open(arg: &FileArg) -> error::Result<()> {
     io.write_block(&buf_proc, buf_len)?;
 
     let decrypted_tag = buf_read.bytes();
-    for (i, byte) in cipher.tag().bytes().iter().enumerate() {
+    for (i, byte) in cipher.finalize().bytes().iter().enumerate() {
         if *byte != decrypted_tag[i] {
             return Err(error::Error::Encryption("invalid tag".to_string()));
         }

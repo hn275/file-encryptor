@@ -62,6 +62,7 @@ pub fn seal(filearg: &FileArg) -> error::Result<()> {
     let mut eof = false;
     loop {
         let mut buf = Block::default();
+
         let bytes_read = io.read_block(&mut buf)?;
         if bytes_read != BLOCK_SIZE {
             crypto::pkcs7::pad(&mut buf, bytes_read);
@@ -69,7 +70,9 @@ pub fn seal(filearg: &FileArg) -> error::Result<()> {
         }
 
         // cipher block
+        cipher.tag.compute(&buf);
         cipher.encrypt_block_inplace(&mut buf, bytes_read);
+
         io.write_block(&buf, BLOCK_SIZE)?;
 
         if eof {
@@ -77,6 +80,6 @@ pub fn seal(filearg: &FileArg) -> error::Result<()> {
         }
     }
 
-    io.write_block(cipher.tag(), BLOCK_SIZE)?;
+    io.write_block(cipher.finalize(), BLOCK_SIZE)?;
     Ok(())
 }

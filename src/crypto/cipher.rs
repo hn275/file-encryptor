@@ -17,7 +17,7 @@ pub struct Cipher {
     aes: Aes256,
     iv: Block,
     counter0: Block,
-    tag: Tag,
+    pub tag: Tag,
 }
 
 impl Cipher {
@@ -56,12 +56,9 @@ impl Cipher {
         self.encrypt_block(&mut ctr);
 
         block.xor(&ctr);
-
-        self.tag.compute(block);
     }
 
     pub fn decrypt_block_inplace(&mut self, block: &mut Block) -> usize {
-        self.tag.compute(block);
         self.iv.inc_counter();
         let mut ctr = self.iv;
         self.aes.encrypt_block((&mut ctr).into());
@@ -73,7 +70,7 @@ impl Cipher {
         size
     }
 
-    pub fn tag(&mut self) -> &Block {
+    pub fn finalize(&mut self) -> &Block {
         let mut block = Block::default();
         block.bytes_mut()[..8].copy_from_slice(&self.payload_len.to_be_bytes());
         block.bytes_mut()[8..].copy_from_slice(&self.aad_len.to_be_bytes());
@@ -137,7 +134,7 @@ impl Tag {
         &self.tag_buf
     }
 
-    fn compute(&mut self, block: &Block) {
+    pub fn compute(&mut self, block: &Block) {
         self.tag_buf.xor(block);
         self.tag_buf = Self::galois_multiply(&self.tag_buf, &self.h);
     }
